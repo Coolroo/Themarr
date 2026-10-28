@@ -1,5 +1,6 @@
-// Package webui serves the admin UI, embedded in the binary. dist/ holds a
-// placeholder page until the admin UI (T-119) builds into it.
+// Package webui serves the admin UI and the drawer page, embedded in the
+// binary. dist/ holds placeholder pages (index.html, drawer.html) until the
+// admin UI (T-119) builds into it.
 package webui
 
 import (

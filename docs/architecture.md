@@ -8,9 +8,9 @@ This page keeps the facts an agent needs while coding; it grows with the code.
 ## Request paths
 
 - **Boot (public):** browser → NPM (homepi, Authelia bypass for
-  `GET|HEAD /v1/apps/{app}/theme` and `GET|HEAD /v1/themes/{id}/tokens`
-  only) → tls-gateway (mutual TLS, client certificate `tls-gateway`) →
-  themarr `:8443`.
+  `GET|HEAD /v1/apps/{app}/theme`, `GET|HEAD /v1/themes/{id}/tokens` and
+  `GET|HEAD /v1/catalog` only) → tls-gateway (mutual TLS, client
+  certificate `tls-gateway`) → themarr `:8443`.
 - **Signed in:** the same path with Authelia in front; themarr trusts
   `Remote-User` and `Remote-Groups` only on that hop, and only on routes that
   need them (admin, `/v1/me/...`, `/v1/policies`).
@@ -18,6 +18,12 @@ This page keeps the facts an agent needs while coding; it grows with the code.
   with the person's Authelia cookie (credentialed CORS, registered app
   origins only). NPM must keep Authelia (any signed-in user) in front of
   `/v1/me/`; if Authelia redirects, the SDK uses the public answer.
+- **Drawer (decision 0009):** an app booted with `drawer: true` shows a
+  themarr button. For a signed-in person (the personal answer was 200 or
+  204) it frames `GET /drawer?app=<id>`, behind Authelia; the page saves
+  same-origin and tells the SDK what to preview with `postMessage`. For a
+  guest the SDK draws a local panel from the public `GET /v1/catalog` and
+  `GET /v1/themes/{id}/tokens`, and keeps a choice in localStorage only.
 - **Health:** `127.0.0.1:8081/healthz`, plain HTTP, loopback only.
 
 ## Parts and owners (board tasks)
@@ -43,11 +49,11 @@ that hold each defence: [security.md](security.md).
 | `cmd/themarr` | Flags (env fallbacks), `-check`, `-healthcheck`, `-version`; the two listeners and shutdown |
 | `internal/config` | Settings and their checks (health listener on loopback only, https origin) |
 | `internal/tlsutil` | The listener's TLS config (1.3, client certificate required, home CA) and `VerifiedCN`; the guard test |
-| `internal/server` | The CN gate, public routes, admin routes, write checks, audit lines, last checks |
+| `internal/server` | The CN gate, public routes (theme, tokens, catalog), admin routes, write checks, audit lines, last checks, the `/drawer` page and its framing rule (`drawer.go`) |
 | `internal/store` | The JSON file, snapshots, `Update(expectedVersion, fn)`, the store's rules |
 | `internal/theme` | A theme's shape and its validator, a port of `packages/tokens/src/validate.ts` against the embedded manifest |
 | `internal/strictjson` | Strict body decoding (from Enforcarr) |
-| `internal/webui` | The admin UI from `embed.FS` (`dist/`: a placeholder until T-119) |
+| `internal/webui` | The admin UI and the drawer page from `embed.FS` (`dist/index.html`, `dist/drawer.html`: placeholders until T-119; `dist/` is gitignored, so placeholders are added with `git add -f`) |
 | `internal/testutil` | Per-test CAs and certificates (from Enforcarr) |
 | `internal/identity` | Who is asking: the `Source` interface and its first module, `Authelia` (`Remote-User`, `Remote-Groups`) |
 | `internal/prefs` | `prefs.json`: saved choices (user → app → theme) and user and group policies, with the store's write rules |

@@ -4,6 +4,10 @@ Date: 2026-10-28. Task: T-116. Asked by: the owner, decision 4 of the plan
 (2026-10-24, [Themarr plan: summary](https://docs.coolroo.dev/doc/themarr-plan-summary-UUGI0CdvZs)):
 "Reading a theme is public; editing is admins only, two-factor."
 
+Status: amended by [0009](0009-drawer.md) (2026-10-28, T-085): theme names
+are public too, on `GET|HEAD /v1/catalog`, for the guest drawer. The
+rest stands.
+
 ## Decision
 
 - **`GET` and `HEAD /v1/apps/{app}/theme` need no sign-in.** NPM on homepi
