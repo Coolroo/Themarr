@@ -1,0 +1,74 @@
+{
+  "missing-required-token.json": {
+    "code": "missing_token",
+    "path": "/tokens/dark/primary"
+  },
+  "unknown-token.json": {
+    "code": "unknown_token",
+    "path": "/tokens/dark/sidebar"
+  },
+  "bad-hex.json": {
+    "code": "bad_hex",
+    "path": "/tokens/dark/primary/$value/hex"
+  },
+  "hex-components-mismatch.json": {
+    "code": "hex_mismatch",
+    "path": "/tokens/dark/primary/$value/hex"
+  },
+  "mode-without-tokens.json": {
+    "code": "mode_without_tokens",
+    "path": "/tokens/light"
+  },
+  "tokens-for-unlisted-mode.json": {
+    "code": "tokens_for_unlisted_mode",
+    "path": "/tokens/light"
+  },
+  "empty-modes.json": {
+    "code": "empty_modes",
+    "path": "/modes"
+  },
+  "bad-source-kind.json": {
+    "code": "bad_source_kind",
+    "path": "/source/kind"
+  },
+  "seeded-without-primary.json": {
+    "code": "missing_seed",
+    "path": "/source/seeds/primary"
+  },
+  "bad-id.json": {
+    "code": "bad_id",
+    "path": "/id"
+  },
+  "duplicate-mode.json": {
+    "code": "duplicate_mode",
+    "path": "/modes/1"
+  },
+  "bad-token-type.json": {
+    "code": "bad_token_type",
+    "path": "/tokens/dark/radius/$type"
+  },
+  "components-out-of-range.json": {
+    "code": "bad_components",
+    "path": "/tokens/dark/background/$value/components"
+  },
+  "bad-unit.json": {
+    "code": "bad_unit",
+    "path": "/tokens/dark/radius/$value/unit"
+  },
+  "bad-version.json": {
+    "code": "bad_version",
+    "path": "/version"
+  },
+  "unknown-field.json": {
+    "code": "unknown_field",
+    "path": "/owner"
+  },
+  "bad-scheme-style.json": {
+    "code": "bad_scheme_style",
+    "path": "/source/schemeStyle"
+  },
+  "handmade-with-seeds.json": {
+    "code": "unknown_field",
+    "path": "/source/seeds"
+  }
+}

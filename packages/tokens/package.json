@@ -1,0 +1,28 @@
+{
+  "name": "@themarr/tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Themarr's token names, theme JSON Schema, manifest, validator and golden fixtures.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema/theme.schema.json": "./schema/theme.schema.json",
+    "./tokens.manifest.json": "./tokens.manifest.json",
+    "./fixtures/*": "./fixtures/*"
+  },
+  "files": [
+    "src",
+    "schema",
+    "fixtures",
+    "tokens.manifest.json"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "generate": "node scripts/generate.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3"
+  }
+}

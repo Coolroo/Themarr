@@ -1,0 +1,10 @@
+{
+  "id": "synth-fixture",
+  "name": "Synth (Drives fixture)",
+  "version": 1,
+  "source": {
+    "kind": "handmade"
+  },
+  "modes": [],
+  "tokens": {}
+}

@@ -1,0 +1,291 @@
+{
+  "manifestVersion": 1,
+  "tokens": [
+    {
+      "name": "background",
+      "group": "surface",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "card",
+      "group": "surface",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "popover",
+      "group": "surface",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "muted",
+      "group": "surface",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "surface-1",
+      "group": "surface",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "surface-2",
+      "group": "surface",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "surface-3",
+      "group": "surface",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "border",
+      "group": "surface",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "input",
+      "group": "surface",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "foreground",
+      "group": "text",
+      "kind": "color",
+      "required": true,
+      "on": "background"
+    },
+    {
+      "name": "card-foreground",
+      "group": "text",
+      "kind": "color",
+      "required": true,
+      "on": "card"
+    },
+    {
+      "name": "popover-foreground",
+      "group": "text",
+      "kind": "color",
+      "required": true,
+      "on": "popover"
+    },
+    {
+      "name": "muted-foreground",
+      "group": "text",
+      "kind": "color",
+      "required": true,
+      "on": "muted"
+    },
+    {
+      "name": "primary",
+      "group": "brand",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "primary-foreground",
+      "group": "brand",
+      "kind": "color",
+      "required": true,
+      "on": "primary"
+    },
+    {
+      "name": "secondary",
+      "group": "brand",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "secondary-foreground",
+      "group": "brand",
+      "kind": "color",
+      "required": true,
+      "on": "secondary"
+    },
+    {
+      "name": "accent",
+      "group": "brand",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "accent-foreground",
+      "group": "brand",
+      "kind": "color",
+      "required": true,
+      "on": "accent"
+    },
+    {
+      "name": "ring",
+      "group": "brand",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "tag",
+      "group": "second-accent",
+      "kind": "color",
+      "required": false
+    },
+    {
+      "name": "tag-foreground",
+      "group": "second-accent",
+      "kind": "color",
+      "required": false,
+      "on": "tag"
+    },
+    {
+      "name": "destructive",
+      "group": "status",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "destructive-foreground",
+      "group": "status",
+      "kind": "color",
+      "required": true,
+      "on": "destructive"
+    },
+    {
+      "name": "success",
+      "group": "status",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "success-foreground",
+      "group": "status",
+      "kind": "color",
+      "required": true,
+      "on": "success"
+    },
+    {
+      "name": "warning",
+      "group": "status",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "warning-foreground",
+      "group": "status",
+      "kind": "color",
+      "required": true,
+      "on": "warning"
+    },
+    {
+      "name": "info",
+      "group": "status",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "info-foreground",
+      "group": "status",
+      "kind": "color",
+      "required": true,
+      "on": "info"
+    },
+    {
+      "name": "chart-1",
+      "group": "chart",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "chart-2",
+      "group": "chart",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "chart-3",
+      "group": "chart",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "chart-4",
+      "group": "chart",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "chart-5",
+      "group": "chart",
+      "kind": "color",
+      "required": true
+    },
+    {
+      "name": "radius",
+      "group": "shape",
+      "kind": "dimension",
+      "required": true
+    }
+  ],
+  "modes": [
+    "light",
+    "dark"
+  ],
+  "sourceKinds": [
+    "seeded",
+    "handmade"
+  ],
+  "schemeStyles": [
+    "tonal",
+    "vibrant",
+    "expressive",
+    "neutral"
+  ],
+  "contrastLevels": [
+    0,
+    1,
+    2
+  ],
+  "dimensionUnits": [
+    "px",
+    "rem"
+  ],
+  "limits": {
+    "idMaxLength": 64,
+    "idPattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+    "nameMaxLength": 100,
+    "hexPattern": "^#[0-9a-fA-F]{6}$",
+    "hexTolerance": 0.5
+  },
+  "errorCodes": [
+    "not_object",
+    "missing_field",
+    "unknown_field",
+    "bad_type",
+    "bad_id",
+    "bad_name",
+    "bad_version",
+    "bad_source_kind",
+    "missing_seed",
+    "bad_scheme_style",
+    "bad_contrast",
+    "empty_modes",
+    "bad_mode",
+    "duplicate_mode",
+    "mode_without_tokens",
+    "tokens_for_unlisted_mode",
+    "missing_token",
+    "unknown_token",
+    "bad_token_type",
+    "bad_color_space",
+    "bad_components",
+    "bad_hex",
+    "hex_mismatch",
+    "bad_alpha",
+    "bad_dimension",
+    "bad_unit"
+  ]
+}

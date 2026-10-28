@@ -1,0 +1,448 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://themarr.coolroo.dev/schema/v1/theme.schema.json",
+  "title": "Themarr theme",
+  "description": "A themarr theme: DTCG 2025.10 tokens with sRGB colours, one token set per listed mode. validateTheme in @themarr/tokens also checks that each hex agrees with its components.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "version",
+    "source",
+    "modes",
+    "tokens"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F][^\\x00-\\x1F\\x7F]*$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "modes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "light",
+          "dark"
+        ]
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "light",
+          "dark"
+        ]
+      },
+      "properties": {
+        "light": {
+          "$ref": "#/$defs/modeTokens"
+        },
+        "dark": {
+          "$ref": "#/$defs/modeTokens"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "modes"
+        ],
+        "properties": {
+          "modes": {
+            "contains": {
+              "const": "light"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "tokens": {
+            "required": [
+              "light"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "tokens": {
+            "not": {
+              "required": [
+                "light"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "modes"
+        ],
+        "properties": {
+          "modes": {
+            "contains": {
+              "const": "dark"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "tokens": {
+            "required": [
+              "dark"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "tokens": {
+            "not": {
+              "required": [
+                "dark"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hex": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "seeded",
+            "handmade"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/seededSource"
+        },
+        {
+          "$ref": "#/$defs/handmadeSource"
+        }
+      ]
+    },
+    "seededSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "seeds",
+        "schemeStyle",
+        "contrast"
+      ],
+      "properties": {
+        "kind": {
+          "const": "seeded"
+        },
+        "seeds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "primary"
+          ],
+          "properties": {
+            "primary": {
+              "$ref": "#/$defs/hex"
+            },
+            "tag": {
+              "$ref": "#/$defs/hex"
+            }
+          }
+        },
+        "schemeStyle": {
+          "enum": [
+            "tonal",
+            "vibrant",
+            "expressive",
+            "neutral"
+          ]
+        },
+        "contrast": {
+          "enum": [
+            0,
+            1,
+            2
+          ]
+        }
+      }
+    },
+    "handmadeSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "handmade"
+        }
+      }
+    },
+    "modeTokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "background",
+        "card",
+        "popover",
+        "muted",
+        "surface-1",
+        "surface-2",
+        "surface-3",
+        "border",
+        "input",
+        "foreground",
+        "card-foreground",
+        "popover-foreground",
+        "muted-foreground",
+        "primary",
+        "primary-foreground",
+        "secondary",
+        "secondary-foreground",
+        "accent",
+        "accent-foreground",
+        "ring",
+        "destructive",
+        "destructive-foreground",
+        "success",
+        "success-foreground",
+        "warning",
+        "warning-foreground",
+        "info",
+        "info-foreground",
+        "chart-1",
+        "chart-2",
+        "chart-3",
+        "chart-4",
+        "chart-5",
+        "radius"
+      ],
+      "properties": {
+        "background": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "card": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "popover": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "muted": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "surface-1": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "surface-2": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "surface-3": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "border": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "input": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "foreground": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "card-foreground": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "popover-foreground": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "muted-foreground": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "primary": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "primary-foreground": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "secondary": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "secondary-foreground": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "accent": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "accent-foreground": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "ring": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "tag": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "tag-foreground": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "destructive": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "destructive-foreground": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "success": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "success-foreground": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "warning": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "warning-foreground": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "info": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "info-foreground": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "chart-1": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "chart-2": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "chart-3": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "chart-4": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "chart-5": {
+          "$ref": "#/$defs/colorToken"
+        },
+        "radius": {
+          "$ref": "#/$defs/dimensionToken"
+        }
+      }
+    },
+    "colorToken": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$type",
+        "$value"
+      ],
+      "properties": {
+        "$type": {
+          "const": "color"
+        },
+        "$value": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "colorSpace",
+            "components",
+            "hex"
+          ],
+          "properties": {
+            "colorSpace": {
+              "const": "srgb"
+            },
+            "components": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "hex": {
+              "$ref": "#/$defs/hex"
+            },
+            "alpha": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      }
+    },
+    "dimensionToken": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$type",
+        "$value"
+      ],
+      "properties": {
+        "$type": {
+          "const": "dimension"
+        },
+        "$value": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "unit"
+          ],
+          "properties": {
+            "value": {
+              "type": "number",
+              "minimum": 0
+            },
+            "unit": {
+              "enum": [
+                "px",
+                "rem"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
