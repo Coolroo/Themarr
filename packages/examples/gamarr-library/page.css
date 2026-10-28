@@ -1,0 +1,284 @@
+/* Gamarr: the game library. Colours only from var(--themarr-*). */
+
+.page {
+  width: 1100px;
+  height: 700px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--themarr-background);
+  color: var(--themarr-foreground);
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+:where(.page) *,
+:where(.page) *::before,
+:where(.page) *::after {
+  box-sizing: border-box;
+}
+
+:where(.page) :is(h2, h3, ul) {
+  margin: 0;
+  padding: 0;
+  font: inherit;
+}
+
+:where(.page) ul {
+  list-style: none;
+}
+
+:where(.page) :is(button, input) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* Top bar, in the brand colour */
+
+.topbar {
+  height: 56px;
+  flex: 0 0 56px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+  background: var(--themarr-primary);
+  color: var(--themarr-primary-foreground);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.search {
+  width: 260px;
+  padding: 7px 10px;
+  border-radius: calc(var(--themarr-radius) - 4px);
+  background: color-mix(in oklab, var(--themarr-primary-foreground) 16%, transparent);
+  color: var(--themarr-primary-foreground);
+}
+
+.search::placeholder {
+  color: var(--themarr-primary-foreground);
+  opacity: 0.85;
+}
+
+/* Menu and main area */
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.nav {
+  width: 190px;
+  flex: 0 0 190px;
+  padding: 12px 0;
+  background: var(--themarr-surface-2);
+  border-right: 1px solid var(--themarr-border);
+}
+
+.nav-item {
+  display: block;
+  width: 100%;
+  padding: 10px 18px 10px 15px;
+  border-left: 3px solid transparent;
+  color: var(--themarr-muted-foreground);
+}
+
+.nav-item.is-active {
+  border-left-color: var(--themarr-primary);
+  background: var(--themarr-muted);
+  color: var(--themarr-foreground);
+  font-weight: 600;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--themarr-border);
+  background: var(--themarr-surface-1);
+}
+
+.tool {
+  padding: 6px 10px;
+  border: 1px solid var(--themarr-border);
+  border-radius: calc(var(--themarr-radius) - 4px);
+  background: var(--themarr-card);
+  color: var(--themarr-card-foreground);
+}
+
+.view-label {
+  color: var(--themarr-muted-foreground);
+}
+
+.view {
+  padding: 6px 10px;
+  border-radius: calc(var(--themarr-radius) - 4px);
+  color: var(--themarr-muted-foreground);
+}
+
+.view.is-active {
+  background: var(--themarr-accent);
+  color: var(--themarr-accent-foreground);
+  font-weight: 600;
+}
+
+.btn-primary {
+  padding: 6px 12px;
+  border-radius: calc(var(--themarr-radius) - 4px);
+  background: var(--themarr-primary);
+  color: var(--themarr-primary-foreground);
+  font-weight: 600;
+}
+
+/* Poster grid */
+
+.grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  align-content: start;
+  gap: 14px;
+  padding: 16px 18px;
+}
+
+.game {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--themarr-border);
+  border-radius: calc(var(--themarr-radius) - 2px);
+  background: var(--themarr-card);
+  color: var(--themarr-card-foreground);
+}
+
+.poster {
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in oklab, var(--themarr-background) 75%, transparent);
+}
+
+.poster-1 {
+  background: var(--themarr-chart-1);
+}
+
+.poster-2 {
+  background: var(--themarr-chart-2);
+}
+
+.poster-3 {
+  background: var(--themarr-chart-3);
+}
+
+.poster-4 {
+  background: var(--themarr-chart-4);
+}
+
+.poster-5 {
+  background: var(--themarr-chart-5);
+}
+
+.poster-6 {
+  background: var(--themarr-secondary);
+}
+
+.status-bar {
+  height: 4px;
+}
+
+.game-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.game-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.game-state {
+  font-size: 11px;
+  color: var(--themarr-muted-foreground);
+}
+
+.status-downloaded {
+  background: var(--themarr-success);
+}
+
+.status-missing {
+  background: var(--themarr-warning);
+}
+
+.status-downloading {
+  background: var(--themarr-info);
+}
+
+.status-unmonitored {
+  background: var(--themarr-muted-foreground);
+}
+
+/* Legend */
+
+.legend {
+  padding: 8px 18px;
+  border-top: 1px solid var(--themarr-border);
+  color: var(--themarr-muted-foreground);
+  font-size: 12px;
+}
+
+.legend ul {
+  display: flex;
+  gap: 16px;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}

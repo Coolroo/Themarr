@@ -1,0 +1,8 @@
+{
+  "id": "gamarr-library",
+  "name": "Gamarr: library",
+  "sourceApp": "gamarr",
+  "description": "The game library: a top bar in the brand colour, the main menu, a toolbar, a grid of posters with a status bar each, and the status legend.",
+  "modes": ["dark", "light"],
+  "size": { "width": 1100, "height": 700 }
+}

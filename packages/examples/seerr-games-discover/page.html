@@ -1,0 +1,50 @@
+<div class="page">
+  <nav class="rail" aria-label="Main">
+    <span class="rail-brand" aria-hidden="true"></span>
+    <ul>
+      <li><button type="button" class="rail-item is-active" aria-label="Discover" aria-current="page"><span class="rail-icon" aria-hidden="true"></span></button></li>
+      <li><button type="button" class="rail-item" aria-label="Games"><span class="rail-icon" aria-hidden="true"></span></button></li>
+      <li><button type="button" class="rail-item" aria-label="Requests"><span class="rail-icon" aria-hidden="true"></span></button></li>
+      <li><button type="button" class="rail-item" aria-label="Issues"><span class="rail-icon" aria-hidden="true"></span></button></li>
+      <li><button type="button" class="rail-item" aria-label="Settings"><span class="rail-icon" aria-hidden="true"></span></button></li>
+    </ul>
+  </nav>
+  <main class="main">
+    <h2 class="visually-hidden">Discover</h2>
+    <header class="topbar">
+      <input class="search" type="search" placeholder="Search games" aria-label="Search games" readonly>
+      <span class="spacer"></span>
+      <span class="waiting">3 requests waiting</span>
+      <span class="avatar" title="Signed in as AB">AB</span>
+    </header>
+    <section class="hero" aria-label="Featured">
+      <div class="hero-poster" aria-hidden="true"></div>
+      <div class="hero-text">
+        <span class="eyebrow">Featured</span>
+        <h3 class="hero-title">[Featured game title]</h3>
+        <p class="hero-description">[Short description from the catalogue: genre, platforms and release year.]</p>
+        <div class="hero-actions">
+          <button type="button" class="btn btn-primary">Request</button>
+          <button type="button" class="btn btn-secondary">More info</button>
+        </div>
+      </div>
+    </section>
+    <section class="trending" aria-label="Trending">
+      <div class="trending-head">
+        <h3 class="trending-title">Trending</h3>
+        <button type="button" class="chip is-active" aria-pressed="true">All</button>
+        <button type="button" class="chip" aria-pressed="false">PC</button>
+        <button type="button" class="chip" aria-pressed="false">Console</button>
+      </div>
+      <ul class="posters">
+        <li class="poster poster-2"><span class="status status-available">Available</span><h4 class="poster-title">[Title]</h4></li>
+        <li class="poster poster-3"><span class="status status-requested">Requested</span><h4 class="poster-title">[Title]</h4></li>
+        <li class="poster poster-4"><span class="status status-pending">Pending</span><h4 class="poster-title">[Title]</h4></li>
+        <li class="poster poster-5"><span class="status status-available">Available</span><h4 class="poster-title">[Title]</h4></li>
+        <li class="poster poster-1"><span class="status status-requested">Requested</span><h4 class="poster-title">[Title]</h4></li>
+        <li class="poster poster-6"><span class="status status-pending">Pending</span><h4 class="poster-title">[Title]</h4></li>
+        <li class="poster poster-3"><span class="status status-available">Available</span><h4 class="poster-title">[Title]</h4></li>
+      </ul>
+    </section>
+  </main>
+</div>
