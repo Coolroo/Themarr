@@ -1,9 +1,19 @@
 # Themarr: a static Go binary on an empty base, running as a non-root user.
 # Build:  docker build --build-arg VERSION=0.1.0 -t themarr-local:0.1.0 .
 #
-# TODO(T-119): add a node stage before this one that builds packages/admin
-# into internal/webui/dist, and copy that into the build stage; until then
-# the image embeds the placeholder page in internal/webui/dist.
+# Stage "ui" builds the admin UI and the drawer page (packages/admin,
+# decision 0010) into internal/webui/dist; the Go stage embeds them. The
+# files in git under internal/webui/dist are placeholders for the Go tests.
+# Build from a clean checkout: COPY packages takes any node_modules with it.
+
+FROM node:24.22.1-bookworm-slim AS ui
+WORKDIR /src
+COPY package.json package-lock.json ./
+COPY packages ./packages
+RUN npm ci --no-audit --no-fund
+# Regenerates the example registry, builds the SDK (packages/web/dist, served
+# at /sdk/), then bundles the UI into internal/webui/dist.
+RUN npm run build -w @themarr/admin
 
 FROM golang:1.27.1-alpine3.24 AS build
 WORKDIR /src
@@ -11,6 +21,7 @@ WORKDIR /src
 COPY go.mod ./
 COPY cmd ./cmd
 COPY internal ./internal
+COPY --from=ui /src/internal/webui/dist ./internal/webui/dist
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/themarr ./cmd/themarr \
  && mkdir -p /out/data

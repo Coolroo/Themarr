@@ -53,7 +53,7 @@ that hold each defence: [security.md](security.md).
 | `internal/store` | The JSON file, snapshots, `Update(expectedVersion, fn)`, the store's rules |
 | `internal/theme` | A theme's shape and its validator, a port of `packages/tokens/src/validate.ts` against the embedded manifest |
 | `internal/strictjson` | Strict body decoding (from Enforcarr) |
-| `internal/webui` | The admin UI and the drawer page from `embed.FS` (`dist/index.html`, `dist/drawer.html`: placeholders until T-119; `dist/` is gitignored, so placeholders are added with `git add -f`) |
+| `internal/webui` | The admin UI and the drawer page from `embed.FS`. git holds placeholder `dist/index.html` and `dist/drawer.html` for the Go tests (`dist/` is gitignored: `git add -f`); the image embeds the built UI (below) |
 | `internal/testutil` | Per-test CAs and certificates (from Enforcarr) |
 | `internal/identity` | Who is asking: the `Source` interface and its first module, `Authelia` (`Remote-User`, `Remote-Groups`) |
 | `internal/prefs` | `prefs.json`: saved choices (user → app → theme) and user and group policies, with the store's write rules |
@@ -85,6 +85,33 @@ that hold each defence: [security.md](security.md).
 - **Snapshots.** Readers take the current `*store.Data` without locking;
   a write copies it, applies the change, checks the rules, saves, then
   publishes the new snapshot. A snapshot is never changed after that.
+
+## The admin UI and the drawer page (TypeScript, decision 0010)
+
+`packages/admin`: Preact, bundled by esbuild; `packages/palette` makes a
+seeded theme's tokens with Material Color Utilities (decision 0003).
+
+- **Build:** `npm run build -w @themarr/admin` (the Dockerfile's `ui` stage)
+  regenerates the example registry, builds the SDK, and writes
+  `internal/webui/dist`: `index.html`, `drawer.html`,
+  `assets/app-<hash>.{js,css}`, `assets/drawer-<hash>.{js,css}` (and their
+  `.LEGAL.txt`), `sdk/themarr.js`, `sdk/themarr.d.ts`. Run it in a copy
+  (`themarr-build.sh ts build`): in a checkout it overwrites the placeholders.
+- **Routes in the browser:** `/` and `/themes`, `/editor/new`,
+  `/editor/<id>`, `/apps`, `/people`, `/examples?theme=&example=`,
+  `/add?app=`. The server answers each with `index.html`.
+- **Code:** `src/api.ts` (the client: ETags, If-Match, refusals, reload on
+  an ended session), `src/data.tsx` (one snapshot at one store version, the
+  writes), `src/logic/*.ts` (pure: editor model, contrast rows, picker,
+  resolution, people, drawer, routes; the tests run them), `src/pages/*`,
+  `src/components/*` (the swatch `ThemePicker`, `ExampleFrame`, dialogs),
+  `src/drawer/*` (the drawer page), `src/styles.css`.
+- **CSP:** no inline script or style; data colours are custom properties
+  set through the CSSOM. The drawer page loads only
+  `/assets/drawer-<hash>.{js,css}` (Authelia allows that one pattern for
+  every signed-in user); the build checks both.
+- **Themed by itself:** the UI boots the SDK for app id `themarr` and reads
+  `--themarr-*` with its own fallbacks; dark mode follows the system.
 
 ## Data
 
