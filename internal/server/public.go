@@ -71,12 +71,11 @@ func (s *Server) serveTokens(w http.ResponseWriter, r *http.Request, d *store.Da
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	if r.Method == http.MethodHead {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		return
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		w.Write(s.cached(d).themeBody(t))
 	}
-	WriteJSON(w, http.StatusOK, t.Public())
 }
 
 // themeETag is a strong tag for one theme's public view at one store

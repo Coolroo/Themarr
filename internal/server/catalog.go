@@ -1,10 +1,6 @@
 package server
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
@@ -87,12 +83,9 @@ func swatchHex(set map[string]theme.Token, name string) string {
 // catalog serves GET|HEAD /v1/catalog: every theme's id, name, version,
 // modes and a few colours per mode, for the SDK's drawer (decision 0009).
 // The ETag is a hash of the body, so it changes exactly when the body does.
+// Both are made once per store snapshot (cache.go).
 func (s *Server) catalog(w http.ResponseWriter, r *http.Request) {
-	var buf bytes.Buffer
-	// Strings, integers and maps of strings: encoding can't fail.
-	json.NewEncoder(&buf).Encode(buildCatalog(s.store.Snapshot()))
-	sum := sha256.Sum256(buf.Bytes())
-	tag := `"c` + hex.EncodeToString(sum[:12]) + `"`
+	body, tag := s.cached(s.store.Snapshot()).catalog()
 	w.Header().Set("ETag", tag)
 	if noneMatch(r.Header.Values("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
@@ -101,6 +94,6 @@ func (s *Server) catalog(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {
-		w.Write(buf.Bytes())
+		w.Write(body)
 	}
 }

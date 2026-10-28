@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Coolroo/themarr/internal/identity"
@@ -106,6 +107,7 @@ type Server struct {
 	store  *store.Store
 	checks *checks
 	log    *slog.Logger
+	cache  atomic.Pointer[publicCache] // the newest snapshot's public answers
 }
 
 // New builds the server over st.
