@@ -119,6 +119,16 @@ for (const f of ["themarr.js", "themarr.d.ts"]) {
 for (const [name, html] of Object.entries(pages)) {
   if (/<script(?![^>]*\bsrc=)[^>]*>/i.test(html) || /<style\b/i.test(html) || /\sstyle=/i.test(html)) fail(`${name} has an inline script or style`);
 }
+// The drawer page is open to every signed-in user, and Authelia lets a
+// non-admin load only the files of one narrow pattern (deploy, T-090):
+// drawer.html may reference nothing else, and its files load nothing more.
+const DRAWER_ASSET = /^\/assets\/drawer-[A-Za-z0-9_-]+\.(js|css)$/;
+const drawerRefs = [...pages["drawer.html"].matchAll(/\b(?:src|href)="([^"]*)"/g)].map((m) => m[1] ?? "");
+if (drawerRefs.length !== 2 || !drawerRefs.every((r) => DRAWER_ASSET.test(r))) fail(`drawer.html must load only ${DRAWER_ASSET}: ${drawerRefs.join(", ")}`);
+for (const ref of drawerRefs) {
+  const text = readFileSync(join(out, ref), "utf8");
+  if (/\burl\(|@import\b|\bimport\(|\bnew Worker\b/.test(text)) fail(`${ref} loads another file (url(), @import, import() or a worker)`);
+}
 const ALLOWED_URL = /^https?:\/\/www\.w3\.org\/(2000\/svg|1999\/xlink|XML\/1998\/namespace|1998\/Math\/MathML|1999\/xhtml)$/;
 for (const dir of [assets, sdk]) {
   for (const f of readdirSync(dir)) {
