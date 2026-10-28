@@ -112,6 +112,14 @@ describe("checkRender", () => {
     [{ dark: { class: "two words" } }, "bad option dark.class"],
     [{ dark: { attr: "data theme", value: "dark" } }, "bad option dark.attr"],
     [{ dark: { attr: "data-theme", value: 'x"]' } }, "bad option dark.value"],
+    // T-115 review: "<" let a server-rendered <style> be closed early.
+    [{ dark: { attr: "data-theme", value: "</style><script>alert(1)</script>" } }, "bad option dark.value"],
+    [{ dark: { attr: "data-theme", value: "</style><img src=x onerror=alert(1)>" } }, "bad option dark.value"],
+    [{ dark: { attr: "data-theme", value: "a>b" } }, "bad option dark.value"],
+    [{ dark: { attr: "data-theme", value: "dark/*" } }, "bad option dark.value"],
+    [{ dark: { attr: "data-theme", value: "*/dark" } }, "bad option dark.value"],
+    [{ selector: ":root /*" }, "bad option selector"],
+    [{ selector: "*/ :root" }, "bad option selector"],
     [{ dark: "auto" as never }, "bad option dark"],
     [{ mode: "dim" as never }, "bad option mode"],
     [{ map: { primary: [{ var: "brand", format: "hex" }] } }, "bad option map.primary[0].var"],
@@ -125,6 +133,16 @@ describe("checkRender", () => {
 
   it("defaults: :root and media", () => {
     assert.deepEqual(checkRender({}), { selector: ":root", dark: "media", map: undefined });
+  });
+
+  it("still takes child combinators, universal selectors and paths in values", () => {
+    assert.equal(typeof checkRender({ selector: "body > main, * .x" }), "object");
+    assert.equal(typeof checkRender({ dark: { attr: "data-theme", value: "night/dark" } }), "object");
+  });
+
+  it("never lets a rendered sheet close a <style> (T-115 review)", () => {
+    const css = cssFor(indigo, r({ selector: "body > main", dark: { attr: "data-theme", value: "dark" } }));
+    assert.ok(!css.includes("<") && !css.includes("/*"));
   });
 });
 

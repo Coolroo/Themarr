@@ -159,8 +159,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
 With the Pages Router, call `boot` in `_document`'s `getInitialProps` and
 render the `<style>` from its result. The CSS holds only numbers, hex and
-units from a validated theme, and selectors checked at boot, so it is safe to
-inline.
+units from a validated theme, and a `selector` and `dark.value` checked at
+boot (neither may hold `<`, a backslash, a control character or a CSS
+comment; the selector no braces, `;` or `@`; the value no quote or `>`),
+so it is safe to inline.
 
 Unreachable warns with `console.warn` in the server's log. If the page also
 calls `boot` in the browser (for refresh on focus), the browser's sheet takes

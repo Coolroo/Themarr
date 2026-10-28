@@ -9,9 +9,13 @@ const FORMATS: readonly string[] = ["oklch", "hsl-triple", "hex", "rgb-triplet"]
 const VAR_PATTERN = /^--[A-Za-z0-9_-]+$/;
 const CLASS_PATTERN = /^-?[_A-Za-z][_A-Za-z0-9-]*$/;
 const ATTR_PATTERN = /^[_A-Za-z][_A-Za-z0-9.-]*$/;
-// No block, statement or at-rule characters, and no "<" (it could end a <style>).
-const SELECTOR_FORBIDDEN = /[{};<@\\\u0000-\u001f\u007f]/;
-const VALUE_FORBIDDEN = /["\\\u0000-\u001f\u007f]/;
+// No block, statement or at-rule characters, no "<" (it could end a <style>
+// when an app renders the CSS into one on its server), and no comment
+// ("/*" or "*/", which could hide the rest of the rule).
+const SELECTOR_FORBIDDEN = /[{};<@\\\u0000-\u001f\u007f]|\/\*|\*\//;
+// dark.value goes inside [attr="value"]: no quote, backslash, "<" or ">",
+// and no comment either.
+const VALUE_FORBIDDEN = /["\\<>\u0000-\u001f\u007f]|\/\*|\*\//;
 
 /** The render options after checks, with defaults. */
 export interface Render {
