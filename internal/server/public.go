@@ -115,20 +115,28 @@ type Check struct {
 
 // checks keeps the last check of each registered app, in memory only.
 type checks struct {
-	mu   sync.Mutex
-	last map[string]Check
+	registered func(app string) bool // in the current store snapshot
+	mu         sync.Mutex
+	last       map[string]Check
 }
 
-func newChecks() *checks { return &checks{last: map[string]Check{}} }
+func newChecks(registered func(app string) bool) *checks {
+	return &checks{registered: registered, last: map[string]Check{}}
+}
 
+// record keeps a check of app, if app is still registered. That is asked
+// under the lock forget takes, and a delete publishes its snapshot before
+// it forgets, so a check never outlives its app's delete (T-115).
 func (c *checks) record(app string, res Resolution, at time.Time) {
 	ch := Check{At: at.UTC(), Result: "unset"}
 	if res.Theme != nil {
 		ch.Result, ch.Theme = "applied", res.Theme.ID
 	}
 	c.mu.Lock()
-	c.last[app] = ch
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+	if c.registered(app) {
+		c.last[app] = ch
+	}
 }
 
 func (c *checks) get(app string) (Check, bool) {

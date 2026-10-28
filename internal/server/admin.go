@@ -424,7 +424,8 @@ func (s *Server) putApp(w http.ResponseWriter, r *http.Request, expected uint64)
 	return id
 }
 
-// deleteApp removes an app and its assignment.
+// deleteApp removes an app, its assignment and its last check, then tells
+// Options.AppDeleted (its saved choices go there).
 func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request, expected uint64) string {
 	id := r.PathValue("id")
 	if !noBody(w, r) {
@@ -442,6 +443,9 @@ func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request, expected uint
 		return id
 	}
 	s.checks.forget(id)
+	if s.opt.AppDeleted != nil {
+		s.opt.AppDeleted(id)
+	}
 	w.Header().Set("ETag", storeTag(d.Version))
 	w.WriteHeader(http.StatusNoContent)
 	return id

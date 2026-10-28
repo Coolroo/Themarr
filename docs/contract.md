@@ -207,7 +207,7 @@ request id, user, action, target id, status, result (`ok`, `refused`,
 | `GET /v1/apps` | | `{"apps": [App...]}` by id |
 | `GET /v1/apps/{id}` | | `App` |
 | `PUT /v1/apps/{id}` | `App` | 201 (new) or 200, the `App` |
-| `DELETE /v1/apps/{id}` | none | 204; its assignment and last check go too |
+| `DELETE /v1/apps/{id}` | none | 204; its assignment, its last check and the choices people saved for it (`prefs.json`) go too |
 | `GET /v1/apps/{id}/last-check` | | `{"app": id, "lastCheck": null \| {"at": RFC 3339 UTC, "result": "applied" \| "unset", "theme"?: id}}` |
 | `GET /v1/assignments` | | `Assignments` |
 | `PUT /v1/assignments` | `Assignments` (both fields required) | 200, `Assignments` |

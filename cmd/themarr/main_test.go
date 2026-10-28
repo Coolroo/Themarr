@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/Coolroo/themarr/internal/prefs"
 	"github.com/Coolroo/themarr/internal/store"
 	"github.com/Coolroo/themarr/internal/testutil"
+	"github.com/Coolroo/themarr/internal/theme"
 )
 
 type setup struct {
@@ -260,4 +262,51 @@ func mustPrepare(t *testing.T, args []string) *app {
 		t.Fatal(err)
 	}
 	return a
+}
+
+// TestDropChoices (T-115 review): saved choices of apps that are no longer
+// registered are removed (after a delete, and at start); others stay, and
+// nothing is written when there is nothing to remove.
+func TestDropChoices(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir, theme.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr, err := prefs.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Update(0, func(d *store.Data) error {
+		d.Apps["board"] = store.App{ID: "board", Name: "Board", Origins: []string{}}
+		d.Apps["seerr"] = store.App{ID: "seerr", Name: "Seerr", Origins: []string{}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pr.Update(0, func(d *prefs.Data) error {
+		d.SetChoice("alice", "board", "ocean")
+		d.SetChoice("alice", "seerr", "ocean")
+		d.SetChoice("bob", "board", "night")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Update(1, func(d *store.Data) error { delete(d.Apps, "board"); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	a := &app{store: st, prefs: pr, log: slog.New(slog.NewJSONHandler(&logs, nil))}
+	dropChoices(a)
+	d := pr.Snapshot()
+	if _, ok := d.Choice("alice", "seerr"); !ok || len(d.Choices) != 1 || len(d.Choices["alice"]) != 1 || d.Version != 2 {
+		t.Fatalf("%+v", d)
+	}
+	if !strings.Contains(logs.String(), `"choices":2`) {
+		t.Fatal(logs.String())
+	}
+	dropChoices(a)
+	if pr.Snapshot().Version != 2 {
+		t.Fatal("a second drop wrote the file")
+	}
 }

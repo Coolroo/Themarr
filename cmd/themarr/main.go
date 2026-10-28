@@ -137,9 +137,27 @@ func publicResolver(d *store.Data, app string) server.Resolution {
 	return server.Resolution{Theme: r.Theme, From: string(r.Source)}
 }
 
+// dropChoices removes the saved choices of apps that are no longer
+// registered: after an app delete, and at start (a delete whose prefs
+// write failed, or a crash between the two writes).
+func dropChoices(a *app) {
+	n, err := a.prefs.DropChoices(func(id string) bool {
+		_, ok := a.store.Snapshot().Apps[id]
+		return ok
+	})
+	if err != nil {
+		a.log.Error("prefs: dropping the saved choices of deleted apps failed", slog.String("error", err.Error()))
+		return
+	}
+	if n > 0 {
+		a.log.Info("dropped the saved choices of deleted apps", slog.Int("choices", n))
+	}
+}
+
 // serve runs the TLS API on ln and the plain health check on hln until ctx
 // ends, then shuts both down.
 func serve(ctx context.Context, a *app, ln, hln net.Listener) error {
+	dropChoices(a)
 	// The one identity module: Authelia's headers on the tls-gateway hop.
 	who := identity.Authelia{}
 	me := prefsapi.New(prefsapi.Config{
@@ -160,6 +178,7 @@ func serve(ctx context.Context, a *app, ln, hln net.Listener) error {
 		Identify:     who.Identify,
 		Routes:       me.Routes(),
 		ThemeInUse:   a.prefs.ThemeInUse,
+		AppDeleted:   func(string) { dropChoices(a) },
 		UI:           webui.Handler(),
 		Drawer:       webui.Drawer(),
 		Log:          a.log,

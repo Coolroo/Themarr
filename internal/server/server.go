@@ -99,6 +99,11 @@ type Options struct {
 	// group policy, internal/prefs) names a theme; deleting such a theme
 	// is refused with 409 in_use. nil: nothing outside the store does.
 	ThemeInUse func(id string) bool
+
+	// AppDeleted is called after an app is deleted (the new snapshot is
+	// published), so what is kept outside the store for it (saved
+	// choices, internal/prefs) goes too. nil: nothing.
+	AppDeleted func(id string)
 }
 
 // Server holds what a request needs.
@@ -132,7 +137,8 @@ func New(st *store.Store, o Options) *Server {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Server{opt: o, store: st, checks: newChecks(), log: log,
+	registered := func(app string) bool { _, ok := st.Snapshot().Apps[app]; return ok }
+	return &Server{opt: o, store: st, checks: newChecks(registered), log: log,
 		refusedClients: NewLogCap("client refused", LogLinesPerMinute, o.Now),
 		refusedWrites:  NewLogCap("write refused", LogLinesPerMinute, o.Now)}
 }

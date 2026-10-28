@@ -403,6 +403,12 @@ func (a *API) putPreference(w http.ResponseWriter, r *http.Request, who identity
 	// stale. A save that changes nothing writes nothing and is answered
 	// like a read.
 	p, written, err := a.cfg.Prefs.UpdatePart(expected, prefs.ChoiceOf(who.User, app), func(p *prefs.Data) error {
+		// Checked again under the prefs lock: an app delete publishes its
+		// snapshot first, then drops the app's choices under this lock,
+		// so no choice for a deleted app is saved after that.
+		if _, ok := a.cfg.Store.Snapshot().Apps[app]; !ok {
+			return errNoApp
+		}
 		if in.Theme == nil {
 			p.SetChoice(who.User, app, "")
 			return nil

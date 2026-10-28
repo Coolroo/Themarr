@@ -83,7 +83,13 @@ func newHarness(t *testing.T, edit ...func(*Config)) *harness {
 			r := resolve.Public(d, app)
 			return server.Resolution{Theme: r.Theme, From: string(r.Source)}
 		},
-		Routes: api.Routes(), ThemeInUse: pr.ThemeInUse})
+		Routes: api.Routes(), ThemeInUse: pr.ThemeInUse,
+		AppDeleted: func(string) {
+			// As main.go's dropChoices.
+			if _, err := pr.DropChoices(func(id string) bool { _, ok := st.Snapshot().Apps[id]; return ok }); err != nil {
+				t.Error(err)
+			}
+		}})
 	hs.h = srv.Handler()
 	if _, err := st.Update(0, func(d *store.Data) error {
 		for _, id := range []string{"ocean", "forest", "night"} {
@@ -779,5 +785,28 @@ func TestQuietAuditLinesAreCapped(t *testing.T) {
 	hs.choose(bob, "board", "night")
 	if n := strings.Count(hs.audit.String(), `"result":"ok"`); n != 2 {
 		t.Fatalf("%d ok lines", n)
+	}
+}
+
+// TestAppDeleteDropsChoices (T-115 review): deleting an app removes the
+// choices people saved for it, so they don't count to the limits and
+// don't come back when an app with that id is registered again.
+func TestAppDeleteDropsChoices(t *testing.T) {
+	hs := newHarness(t)
+	alice, bob := user("alice"), user("bob")
+	hs.choose(alice, "board", "forest")
+	hs.choose(bob, "board", "night")
+	hs.choose(bob, "seerr", "night")
+	v := hs.store.Snapshot().Version
+	hs.mustDo(http.MethodDelete, "/v1/apps/board", "", writeAs(admin, `"`+itoa(v)+`"`)...)
+	d := hs.prefs.Snapshot()
+	if len(d.Choices) != 1 || len(d.Choices["bob"]) != 1 || d.Choices["bob"]["seerr"] != "night" {
+		t.Fatalf("%+v", d.Choices)
+	}
+	body := `{"id":"board","name":"Board","origins":["https://board.test"]}`
+	hs.mustDo(http.MethodPut, "/v1/apps/board", body, writeAs(admin, `"`+itoa(v+1)+`"`)...)
+	rr := hs.do(http.MethodGet, "/v1/me/apps/board/preference", "", alice...)
+	if !strings.Contains(rr.Body.String(), `"theme":null`) {
+		t.Fatalf("the old choice came back: %s", rr.Body.String())
 	}
 }

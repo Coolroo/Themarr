@@ -385,3 +385,37 @@ func TestNoOpUpdateWritesNothing(t *testing.T) {
 		t.Fatal("a no-op write touched the file")
 	}
 }
+
+// TestDropChoices (T-115 review): the choices of apps keep refuses go;
+// the rest stay; nothing to drop writes nothing.
+func TestDropChoices(t *testing.T) {
+	s := open(t, t.TempDir())
+	if _, err := s.Update(0, func(d *Data) error {
+		d.SetChoice("alice", "board", "ocean")
+		d.SetChoice("alice", "seerr", "ocean")
+		d.SetChoice("bob", "board", "night")
+		d.SetPolicy(Users, "bob", Policy{Theme: "ocean", Kind: Default})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	held := s.Snapshot()
+	n, err := s.DropChoices(func(app string) bool { return app != "board" })
+	if err != nil || n != 2 {
+		t.Fatalf("%d %v", n, err)
+	}
+	d := s.Snapshot()
+	if d.Version != 2 || len(d.Choices) != 1 || d.Choices["alice"]["seerr"] != "ocean" || len(d.Users) != 1 {
+		t.Fatalf("%+v", d)
+	}
+	if len(held.Choices) != 2 || held.Choices["alice"]["board"] != "ocean" {
+		t.Fatal("a held snapshot changed")
+	}
+	// The dropped choices count as changed: a tag older than the drop conflicts.
+	if _, _, err := s.UpdatePart(1, ChoiceOf("bob", "board"), func(d *Data) error { d.SetChoice("bob", "board", "x"); return nil }); !errors.Is(err, ErrConflict) {
+		t.Fatalf("got %v", err)
+	}
+	if n, err := s.DropChoices(func(app string) bool { return app != "board" }); err != nil || n != 0 || s.Snapshot().Version != 2 {
+		t.Fatalf("second drop: %d %v", n, err)
+	}
+}

@@ -330,6 +330,30 @@ func (s *Store) UpdatePart(expected uint64, p Part, fn func(d *Data) error) (d *
 	return s.commit(cur, next, p)
 }
 
+// DropChoices removes every saved choice for an app that keep refuses (an
+// app no longer registered), so a deleted app's choices neither count to
+// the limits nor come back when an app with that id is registered again.
+// It reports how many it removed; when there are none, nothing is written.
+func (s *Store) DropChoices(keep func(app string) bool) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur := s.cur.Load()
+	next := cur.clone()
+	n := 0
+	for user, apps := range cur.Choices {
+		for app := range apps {
+			if !keep(app) {
+				next.SetChoice(user, app, "")
+				n++
+			}
+		}
+	}
+	if _, _, err := s.commit(cur, next, All); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // changedAt is the version at which part last changed (under mu).
 func (s *Store) changedAt(p Part, cur *Data) uint64 {
 	switch p.kind {

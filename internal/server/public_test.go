@@ -224,6 +224,33 @@ func TestLastCheck(t *testing.T) {
 	if _, ok := hs.srv.checks.get("board"); ok {
 		t.Fatal("a deleted app's check was kept")
 	}
+	// T-115 review: a request that read the snapshot before the delete
+	// and records after it records nothing.
+	hs.srv.checks.record("board", Resolution{}, hs.now)
+	if _, ok := hs.srv.checks.get("board"); ok {
+		t.Fatal("a check was recorded after the app's delete")
+	}
+}
+
+// TestAppDeletedHook: a deleted app's id goes to Options.AppDeleted after
+// the delete is published; a refused delete calls nothing.
+func TestAppDeletedHook(t *testing.T) {
+	var got []string
+	var hs *harness
+	hs = newHarness(t, func(o *Options) {
+		o.AppDeleted = func(id string) {
+			if _, ok := hs.store.Snapshot().Apps[id]; ok {
+				t.Error("called before the delete was published")
+			}
+			got = append(got, id)
+		}
+	})
+	hs.putApp("board")
+	problem(t, hs.write(http.MethodDelete, "/v1/apps/ghost", ""), http.StatusNotFound, "not_found")
+	hs.mustWrite(http.MethodDelete, "/v1/apps/board", "")
+	if len(got) != 1 || got[0] != "board" {
+		t.Fatalf("%v", got)
+	}
 }
 
 // TestResolverSeam: another resolver (T-089's layered one) replaces the
