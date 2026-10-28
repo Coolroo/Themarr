@@ -93,10 +93,16 @@ func (s *Server) write(action string, h writeHandler) adminHandler {
 					result = "failed"
 				}
 			}
-			s.log.Info("write", slog.String("request_id", RequestID(r)), slog.String("user", who.User),
+			attrs := []slog.Attr{slog.String("request_id", RequestID(r)), slog.String("user", who.User),
 				slog.String("action", action), slog.String("target", target), slog.Int("status", status),
 				slog.String("result", result), slog.String("code", rec.code),
-				slog.Uint64("store_version", s.store.Snapshot().Version))
+				slog.Uint64("store_version", s.store.Snapshot().Version)}
+			if result == "refused" {
+				// Capped: a script can repeat a refused write as fast as it likes.
+				s.refusedWrites.Log(s.log, slog.LevelInfo, "write", attrs...)
+				return
+			}
+			s.log.LogAttrs(r.Context(), slog.LevelInfo, "write", attrs...)
 		}()
 		expected, ok := CheckWrite(rec, r, s.opt.PublicOrigin, "")
 		if !ok {

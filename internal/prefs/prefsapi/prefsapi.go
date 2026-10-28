@@ -57,6 +57,7 @@ type Config struct {
 type API struct {
 	cfg   Config
 	saves *limiter
+	quiet *server.LogCap // audit lines of writes that changed nothing
 }
 
 // New builds the routes over cfg.
@@ -79,7 +80,8 @@ func New(cfg Config) *API {
 	if cfg.SaveRate <= 0 {
 		cfg.SaveRate = 2
 	}
-	return &API{cfg: cfg, saves: newLimiter(cfg.SaveRate, cfg.SaveBurst, cfg.Now)}
+	return &API{cfg: cfg, saves: newLimiter(cfg.SaveRate, cfg.SaveBurst, cfg.Now),
+		quiet: server.NewLogCap("prefs write refused or unchanged", server.LogLinesPerMinute, cfg.Now)}
 }
 
 // Routes are the routes to mount (server.Options.Routes).
@@ -190,10 +192,17 @@ func (a *API) write(action string, h writeHandler) handler {
 					result = "failed"
 				}
 			}
-			a.cfg.Log.Info("write", slog.String("request_id", server.RequestID(r)), slog.String("user", who.User),
+			attrs := []slog.Attr{slog.String("request_id", server.RequestID(r)), slog.String("user", who.User),
 				slog.String("action", action), slog.String("target", target(r)), slog.Int("status", status),
 				slog.String("result", result), slog.String("code", rec.code),
-				slog.Uint64("prefs_version", a.cfg.Prefs.Snapshot().Version))
+				slog.Uint64("prefs_version", a.cfg.Prefs.Snapshot().Version)}
+			if result == "refused" || result == "unchanged" {
+				// Capped: any signed-in person can repeat these as fast
+				// as the save limit lets them; they change nothing.
+				a.quiet.Log(a.cfg.Log, slog.LevelInfo, "write", attrs...)
+				return
+			}
+			a.cfg.Log.LogAttrs(r.Context(), slog.LevelInfo, "write", attrs...)
 		}()
 		expected, ok := server.CheckWrite(rec, r, a.cfg.PublicOrigin, tagPrefix)
 		if !ok {

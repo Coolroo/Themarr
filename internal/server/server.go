@@ -108,6 +108,10 @@ type Server struct {
 	checks *checks
 	log    *slog.Logger
 	cache  atomic.Pointer[publicCache] // the newest snapshot's public answers
+
+	// Caps on log lines anybody behind the gate can cause (T-115).
+	refusedClients *LogCap // wrong client certificate CN
+	refusedWrites  *LogCap // refused admin writes' audit lines
 }
 
 // New builds the server over st.
@@ -128,7 +132,9 @@ func New(st *store.Store, o Options) *Server {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Server{opt: o, store: st, checks: newChecks(), log: log}
+	return &Server{opt: o, store: st, checks: newChecks(), log: log,
+		refusedClients: NewLogCap("client refused", LogLinesPerMinute, o.Now),
+		refusedWrites:  NewLogCap("write refused", LogLinesPerMinute, o.Now)}
 }
 
 // Handler returns every route, behind the client-certificate gate.
@@ -187,7 +193,7 @@ func (s *Server) requireClient(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cn, ok := tlsutil.VerifiedCN(r.TLS)
 		if !ok || cn != s.opt.ClientCN {
-			s.log.Warn("client refused", slog.String("request_id", RequestID(r)), slog.String("cn", cn))
+			s.refusedClients.Log(s.log, slog.LevelWarn, "client refused", slog.String("request_id", RequestID(r)), slog.String("cn", cn))
 			Problem(w, r, http.StatusForbidden, "client_not_allowed", "This client certificate may not call themarr.")
 			return
 		}

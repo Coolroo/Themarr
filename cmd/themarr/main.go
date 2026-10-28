@@ -164,7 +164,10 @@ func serve(ctx context.Context, a *app, ln, hln net.Listener) error {
 		Drawer:       webui.Drawer(),
 		Log:          a.log,
 	})
-	errLog := slog.NewLogLogger(slog.NewJSONHandler(os.Stderr, nil), slog.LevelWarn)
+	// The listeners' own errors (a failed TLS handshake is one line each,
+	// and anybody who reaches the port can cause them) pass a cap.
+	errCap := server.NewLogCap("http server error", server.LogLinesPerMinute, nil)
+	errLog := slog.NewLogLogger(errCap.Handler(slog.NewJSONHandler(os.Stderr, nil)), slog.LevelWarn)
 	api := &http.Server{
 		Handler:           srv.Handler(),
 		TLSConfig:         a.tls,

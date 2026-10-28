@@ -760,3 +760,24 @@ func TestSaveRateLimit(t *testing.T) {
 	}
 	problem(t, save(bob), http.StatusTooManyRequests, "rate_limited")
 }
+
+// TestQuietAuditLinesAreCapped (T-115 review): a signed-in person
+// repeating refused or unchanged writes can't flood the log; writes that
+// change something are always logged.
+func TestQuietAuditLinesAreCapped(t *testing.T) {
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	hs := newHarness(t, func(c *Config) { c.Now = func() time.Time { return now } })
+	bob := user("bob")
+	hs.choose(bob, "board", "forest")
+	for i := 0; i < 2*server.LogLinesPerMinute; i++ {
+		hs.do(http.MethodPut, "/v1/me/apps/board/preference", `{"theme":"forest"}`, writeAs(bob, `"p1"`)...)
+		hs.do(http.MethodPut, "/v1/me/apps/board/preference", `{"theme":"night"}`, writeAs(bob, `"x"`)...)
+	}
+	if n := strings.Count(hs.audit.String(), `"msg":"write"`); n != 1+server.LogLinesPerMinute {
+		t.Fatalf("%d audit lines", n)
+	}
+	hs.choose(bob, "board", "night")
+	if n := strings.Count(hs.audit.String(), `"result":"ok"`); n != 2 {
+		t.Fatalf("%d ok lines", n)
+	}
+}
