@@ -49,4 +49,19 @@ describe("parseWire", () => {
     const p = parseWire(bad);
     assert.ok(!p.ok && p.reason.startsWith("invalid theme: hex_mismatch"));
   });
+
+  it("never lets a __proto__ key change a prototype (T-115 review)", () => {
+    // JSON.parse makes "__proto__" an own key, as a server's answer would.
+    const raw = JSON.stringify(wire("handmade-synth-dark")).replace('"tokens":{', '"tokens":{"__proto__":{"light":{"x":1}},');
+    const p = parseWire(JSON.parse(raw));
+    assert.ok(!p.ok, "a __proto__ mode is refused, not taken as the prototype");
+    assert.equal(({} as Record<string, unknown>)["light"], undefined);
+
+    const inSet = JSON.stringify(wire("handmade-synth-dark")).replace('"dark":{', '"dark":{"__proto__":{"primary":1},');
+    const q = parseWire(JSON.parse(inSet));
+    assert.ok(q.ok);
+    assert.equal(Object.getPrototypeOf(q.theme.tokens), Object.prototype);
+    assert.equal(Object.getPrototypeOf(q.theme.tokens.dark), Object.prototype);
+    assert.ok(!Object.hasOwn(q.theme.tokens.dark ?? {}, "__proto__"));
+  });
 });

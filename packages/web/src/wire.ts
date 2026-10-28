@@ -22,15 +22,15 @@ function isObject(v: unknown): v is Record<string, unknown> {
  */
 function dropUnknownTokens(tokens: unknown): unknown {
   if (!isObject(tokens)) return tokens;
-  const out: Record<string, unknown> = {};
-  for (const [mode, set] of Object.entries(tokens)) {
-    if (!isObject(set)) {
-      out[mode] = set;
-      continue;
-    }
-    out[mode] = Object.fromEntries(Object.entries(set).filter(([name]) => isTokenName(name)));
-  }
-  return out;
+  // Object.fromEntries defines own properties: a "__proto__" key from
+  // JSON.parse stays a key (and the token rules refuse it as a mode); it
+  // never becomes the object's prototype.
+  return Object.fromEntries(
+    Object.entries(tokens).map(([mode, set]) => [
+      mode,
+      isObject(set) ? Object.fromEntries(Object.entries(set).filter(([name]) => isTokenName(name))) : set,
+    ]),
+  );
 }
 
 /** Parse a 200 body. Other top-level fields are ignored. */
