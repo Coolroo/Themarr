@@ -286,6 +286,10 @@ func TestApps(t *testing.T) {
 		}
 	}
 	problem(t, hs.write(http.MethodPut, "/v1/apps/Bad_Id", `{"id":"Bad_Id","name":"B","origins":[]}`), 422, "invalid")
+	// T-115 review: origins that are not exactly what a browser sends.
+	for _, o := range []string{"https://*.coolroo.dev", "https://a;b", `https://a\"b`, "https://h:", "https://board.test:443"} {
+		problem(t, hs.write(http.MethodPut, "/v1/apps/board", `{"id":"board","name":"B","origins":["`+o+`"]}`), 422, "invalid")
+	}
 	hs.putTheme("ocean")
 	hs.assign("", map[string]string{"board": "ocean"})
 	hs.mustWrite(http.MethodDelete, "/v1/apps/board", "")

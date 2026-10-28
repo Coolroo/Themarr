@@ -14,10 +14,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -252,7 +253,7 @@ func CheckApp(a App) error {
 	seen := map[string]bool{}
 	for _, o := range a.Origins {
 		if !ValidOrigin(o) {
-			return rule("invalid", "each origin must be https://host[:port], lower case, with no path")
+			return rule("invalid", "each origin must be https://host[:port] as a browser sends it: a lower-case host name, a port of 1-65535 but not 443, no path")
 		}
 		if seen[o] {
 			return rule("invalid", "an origin is listed twice")
@@ -262,14 +263,28 @@ func CheckApp(a App) error {
 	return nil
 }
 
+// originPattern is an https origin as a browser sends it: a lower-case DNS
+// host name (labels of letters, digits and inner hyphens) and an optional
+// port without leading zeros.
+var originPattern = regexp.MustCompile(`^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[1-9][0-9]{0,4})?$`)
+
 // ValidOrigin accepts exactly an https origin as a browser sends it in the
-// Origin header: lower-case host, optional port, no path, no trailing slash.
+// Origin header: lower-case host name, an optional port of 1-65535 other
+// than 443 (a browser leaves the default port out), no path, no trailing
+// slash. It is the strict pattern the drawer's frame-ancestors check uses,
+// so nothing else (a wildcard, quotes, ";", non-ASCII, an empty port) can
+// be stored and then go into a header (T-115).
 func ValidOrigin(o string) bool {
-	u, err := url.Parse(o)
-	if err != nil || u.Scheme != "https" || u.Host == "" || o != "https://"+u.Host {
+	if len(o) > 255 || !originPattern.MatchString(o) {
 		return false
 	}
-	return u.Host == strings.ToLower(u.Host) && len(o) <= 255 && printable(o)
+	if i := strings.LastIndexByte(o, ':'); i > len("https:") {
+		port, err := strconv.Atoi(o[i+1:])
+		if err != nil || port > 65535 || port == 443 {
+			return false
+		}
+	}
+	return true
 }
 
 func printable(s string) bool {

@@ -308,4 +308,26 @@ func TestValidOrigin(t *testing.T) {
 			t.Errorf("ValidOrigin(%q) = %v", o, !want)
 		}
 	}
+	// T-115 review: what the old check let through, and the edges of the
+	// strict pattern.
+	for _, o := range []string{
+		"https://localhost", "https://a", "https://x-1.y-2.test:1", "https://board.test:65535",
+		"https://10.0.0.1:8443",
+	} {
+		if !ValidOrigin(o) {
+			t.Errorf("ValidOrigin(%q) = false", o)
+		}
+	}
+	for _, o := range []string{
+		"https://*.coolroo.dev", "https://a;b", `https://a"b`, "https://a'b", "https://h:",
+		"https://bôard.test", "https://board.test:0", "https://board.test:08443", "https://board.test:65536",
+		"https://board.test:99999", "https://board.test:443", "https://-a.test", "https://a-.test",
+		"https://a..test", "https://.a.test", "https://a.test.", "https://a_b.test", "https://[::1]",
+		"https://a b.test", "https://a.test:80:81", "https://a.test\n", "HTTPS://a.test",
+		"https://" + strings.Repeat("a", 250),
+	} {
+		if ValidOrigin(o) {
+			t.Errorf("ValidOrigin(%q) = true", o)
+		}
+	}
 }

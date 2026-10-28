@@ -219,9 +219,11 @@ request id, user, action, target id, status, result (`ok`, `refused`,
   `version`: a new theme gets 1 and a replaced one the stored version plus 1,
   whatever the body says. `inherit` and `none` are not theme ids.
 - **App**: `{"id", "name", "origins"}`. `id` as above, `name` 1-80 printable
-  characters, `origins` at most 10 distinct `https://host[:port]` (lower
-  case, no path), the origins its pages run on (for `/v1/me`'s credentialed
-  CORS).
+  characters, `origins` at most 10 distinct `https://host[:port]` exactly
+  as a browser sends them (a lower-case host name of letters, digits,
+  inner hyphens and dots; a port of 1-65535 without leading zeros, never
+  443; no path, no wildcard), the origins its pages run on (for
+  `/v1/me`'s credentialed CORS and the drawer's `frame-ancestors`).
 - **Assignments**: `{"global": theme id | null, "perApp": {app id: theme id |
   "inherit" | "none"}}`. An app missing from `perApp` inherits.
 - The last check is kept in memory only: it is empty after a restart.
