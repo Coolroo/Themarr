@@ -13,8 +13,10 @@ palettes with Material Color Utilities) or set colour by colour by hand. People
 can preview and choose themes inside each app through a small drawer, and admins
 can set or enforce themes per user and group.
 
-**Status:** being built (board tasks T-085 to T-090, T-114 to T-120). Nothing is
-deployed.
+**Status:** 0.1.0, the first release (tag `v0.1.0`), after the security
+review of 2026-10-28 ([docs/security.md](docs/security.md), "Review"). Not
+deployed yet: the deployment is home-server board task T-090, and the image
+is built there as `themarr-local:0.1.0`.
 
 ## Parts
 
