@@ -1,0 +1,23 @@
+{
+  "name": "@themarr/examples",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Themarr's example app screens: plain HTML and CSS drawn with a theme's --themarr-* tokens, and the helper that mounts one in a shadow root.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "generate": "node scripts/generate.ts"
+  },
+  "dependencies": {
+    "@themarr/tokens": "0.1.0",
+    "@themarr/web": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3"
+  }
+}

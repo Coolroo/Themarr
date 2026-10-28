@@ -1,0 +1,8 @@
+{
+  "id": "vibe-kanban-board",
+  "name": "vibe-kanban: board",
+  "sourceApp": "vibe-kanban",
+  "description": "The task board: projects in a sidebar, a top bar with search and New task, and four columns of task cards with tag and state pills and people's initials.",
+  "modes": ["light", "dark"],
+  "size": { "width": 1100, "height": 700 }
+}

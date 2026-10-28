@@ -1,0 +1,8 @@
+{
+  "id": "seerr-games-discover",
+  "name": "seerr-games: discover",
+  "sourceApp": "seerr-games",
+  "description": "The discover page: an icon rail, search, a featured game with Request and More info, and a row of trending games with request states.",
+  "modes": ["dark"],
+  "size": { "width": 1100, "height": 700 }
+}
