@@ -1,0 +1,24 @@
+{
+  "name": "@themarr/admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Themarr's admin UI: themes, the editor, apps, people, examples. Preact, bundled by esbuild into internal/webui/dist.",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import @themarr/palette/node-hook --test \"test/**/*.test.ts\"",
+    "build": "node scripts/build.ts"
+  },
+  "dependencies": {
+    "@themarr/examples": "0.1.0",
+    "@themarr/palette": "0.1.0",
+    "@themarr/tokens": "0.1.0",
+    "@themarr/web": "0.1.0",
+    "preact": "10.29.8"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  }
+}

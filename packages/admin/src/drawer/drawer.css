@@ -1,0 +1,174 @@
+/* The drawer page, inside the SDK's iframe (about 344px wide). */
+
+body {
+  font-size: 14px;
+}
+
+.drawer {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  color: var(--card-fg);
+}
+
+.drawer-alone {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 32px 16px;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.drawer-h {
+  font-size: 20px;
+}
+
+.drawer-who {
+  margin: 0;
+  padding: 8px 16px 0;
+}
+
+.drawer-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-tabs > button {
+  min-height: 44px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.drawer-tabs > button[aria-selected="true"] {
+  border-bottom-color: var(--strong);
+  color: var(--fg);
+}
+
+.drawer-body {
+  flex: 1;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.drawer-lock {
+  padding: 10px 12px;
+  border-radius: var(--r);
+  background: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.drawer-now {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+}
+
+.drawer-previewing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--warn) 16%, var(--card));
+  font-size: 13px;
+}
+
+.drawer-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.tile {
+  position: relative;
+  height: 60px;
+  padding: 0;
+  border-radius: var(--r);
+  border: 2px solid transparent;
+  background: var(--sw-fill);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.tile:hover,
+.tile:focus-visible {
+  transform: scale(1.06);
+  z-index: 2;
+  box-shadow: 0 6px 14px rgb(0 0 0 / 0.26);
+}
+
+.tile[aria-pressed="true"] {
+  border-color: var(--strong);
+}
+
+.tile-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22px;
+  padding: 0 7px;
+  display: flex;
+  align-items: center;
+  background: var(--sw-band);
+  color: var(--sw-band-fg);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.choice-sm {
+  min-height: 40px;
+  padding: 6px 10px;
+}
+
+.drawer-status {
+  margin: 0;
+}
+
+.drawer-status.is-ok { color: var(--ok); }
+.drawer-status.is-bad { color: var(--bad); }
+
+.drawer-keep {
+  position: sticky;
+  bottom: 0;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.drawer-keep .seg > button {
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile {
+    transition: none;
+  }
+}
