@@ -518,7 +518,9 @@ func TestPolicyRoutes(t *testing.T) {
 	problem(t, put("/v1/policies/users/bob", `{"theme":"ocean","kind":"always"}`), 422, "invalid")
 	problem(t, put("/v1/policies/users/bob", `{"theme":"ocean"}`), 422, "missing_field")
 	problem(t, put("/v1/policies/users/bob", `{"theme":"ocean","kind":"default","x":1}`), 400, "invalid_json")
-	problem(t, put("/v1/policies/users/b%20b", `{"theme":"ocean","kind":"default"}`), 422, "bad_name")
+	problem(t, put("/v1/policies/users/b+b", `{"theme":"ocean","kind":"default"}`), 422, "bad_name")
+	// An escaped name never reaches the route (T-115: escaped paths are 404).
+	problem(t, put("/v1/policies/users/b%20b", `{"theme":"ocean","kind":"default"}`), 404, "not_found")
 	problem(t, put("/v1/policies/groups/"+strings.Repeat("g", 129), `{"theme":"ocean","kind":"default"}`), 422, "bad_name")
 
 	if rr := put("/v1/policies/users/bob", `{"theme":"ocean","kind":"default"}`); rr.Code != 201 || rr.Header().Get("ETag") != `"p1"` {

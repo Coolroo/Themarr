@@ -14,6 +14,11 @@ certificate. Code: `internal/server`. Token rules: `packages/tokens/README.md`.
 - The verified certificate's common name must be `tls-gateway` (setting
   `-client-cn`). Any other (`npm-homepi`, `enforcarr`, ...) gets
   `403 client_not_allowed`.
+- A path with any percent-escape (`%2F`, `%3F`, `%5C`, `%2E`, `%25`, or
+  any other), or with a character Go would have escaped (such as `!` or
+  `'`), is `404 not_found` before routing: Go would route
+  `/v1/apps/board%2Ftheme` as one segment, while NPM and Authelia match
+  the decoded path. No themarr route or page needs one in its path.
 
 ## Headers on every answer
 

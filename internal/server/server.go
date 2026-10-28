@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Coolroo/themarr/internal/identity"
@@ -188,8 +189,24 @@ func (s *Server) requireClient(next http.Handler) http.Handler {
 			Problem(w, r, http.StatusForbidden, "client_not_allowed", "This client certificate may not call themarr.")
 			return
 		}
+		if !plainPath(r) {
+			Problem(w, r, http.StatusNotFound, "not_found", "No such endpoint.")
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// plainPath refuses a path with a percent-escape. Go routes an escaped
+// slash inside one segment (/v1/apps/board%2Ftheme is the app
+// "board/theme", an admin route), while NPM and Authelia match the
+// decoded, cleaned path (/v1/apps/board/theme, the public bypass), and
+// %3F, %5C, %2E and %25 can make them disagree the same way. No themarr
+// route or page needs an escape in its path, so a path with one, or with
+// a character Go would have escaped (RawPath is then set), is 404 before
+// routing (T-115).
+func plainPath(r *http.Request) bool {
+	return r.URL.RawPath == "" && !strings.Contains(r.URL.EscapedPath(), "%")
 }
 
 // ProblemRecorder is a ResponseWriter that notes the problem code of an
