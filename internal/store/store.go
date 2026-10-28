@@ -132,8 +132,7 @@ func (s *Store) Update(expected uint64, fn func(d *Data) error) (*Data, error) {
 	}
 	next.Version = cur.Version + 1
 	if err := s.save(next); err != nil {
-		var synced *dirSyncError
-		if errors.As(err, &synced) {
+		if IsRenamed(err) {
 			// The file was renamed into place but the rename may not survive
 			// a crash. What is on disk is the new data, so readers see it too;
 			// the caller still gets the error.
@@ -351,17 +350,24 @@ func encode(d *Data) ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
-// save writes d atomically: a temp file in the store's own directory (a
-// rename across file systems fails, and the root file system is read-only),
-// synced, renamed over the store file, and the directory synced so the
-// rename itself survives a crash.
-func (s *Store) save(d *Data) (err error) {
+// save writes d atomically with WriteAtomic.
+func (s *Store) save(d *Data) error {
 	b, err := encode(d)
 	if err != nil {
 		return fmt.Errorf("store: encode: %w", err)
 	}
-	dir := filepath.Dir(s.path)
-	tmp, err := os.CreateTemp(dir, "."+FileName+".*.tmp")
+	return WriteAtomic(s.path, b)
+}
+
+// WriteAtomic replaces the file at path with b: a temp file in the same
+// directory (a rename across file systems fails, and the root file system
+// is read-only), synced, renamed over path, and the directory synced so the
+// rename itself survives a crash. When only that last sync fails, the
+// error satisfies IsRenamed: the new content is in place, but the rename
+// may not survive a crash. internal/prefs writes its file with it too.
+func WriteAtomic(path string, b []byte) (err error) {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return fmt.Errorf("store: temp file: %w", err)
 	}
@@ -381,7 +387,7 @@ func (s *Store) save(d *Data) (err error) {
 	if err = tmp.Close(); err != nil {
 		return fmt.Errorf("store: close: %w", err)
 	}
-	if err = os.Rename(tmp.Name(), s.path); err != nil {
+	if err = os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("store: rename: %w", err)
 	}
 	// The temp name is gone now (renamed); on an error below, the deferred
@@ -395,6 +401,14 @@ func (s *Store) save(d *Data) (err error) {
 		return &dirSyncError{derr}
 	}
 	return nil
+}
+
+// IsRenamed reports whether err is from a WriteAtomic whose rename
+// succeeded but whose directory sync failed: the file holds the new
+// content.
+func IsRenamed(err error) bool {
+	var synced *dirSyncError
+	return errors.As(err, &synced)
 }
 
 // ThemeIDs lists the themes' ids in order.

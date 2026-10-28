@@ -42,28 +42,30 @@ take, is `404 not_found`.
 
 | Status | code | When |
 |---|---|---|
-| 400 | `invalid_json` | not one JSON object, invalid UTF-8, repeated keys, too deep, unknown or wrongly-cased field (apps, assignments, favourites) |
-| 400 | `bad_if_match` | `If-Match` is not exactly one strong tag such as `"12"` (`*` and `W/` are refused) |
+| 400 | `invalid_json` | not one JSON object, invalid UTF-8, repeated keys, too deep, unknown or wrongly-cased field (apps, assignments, favourites, preferences, policies) |
+| 400 | `bad_if_match` | `If-Match` is not exactly one strong tag such as `"12"` (store) or `"p7"` (prefs) (`*`, `W/` and the other kind's tag are refused) |
 | 400 | `unexpected_body` | a DELETE with a body |
-| 401 | `unauthenticated` | admin route without a usable `Remote-User` (missing, repeated, or not 1-128 of `A-Za-z0-9._@-`), or with `Remote-Groups` repeated |
+| 401 | `unauthenticated` | a route behind Authelia (admin, `/v1/me`, `/v1/policies`) without a usable `Remote-User` (missing, repeated, or not 1-128 of `A-Za-z0-9._@-`), or with `Remote-Groups` repeated |
 | 403 | `client_not_allowed` | client certificate CN is not the configured one |
 | 403 | `not_admin` | `Remote-Groups` doesn't hold the admin group (`admins`) |
 | 403 | `bad_origin` | write without exactly one `Origin: https://themarr.coolroo.dev` |
 | 403 | `cross_site` | write without exactly one `Sec-Fetch-Site: same-origin` |
-| 404 | `not_found` | unknown route, theme or app; an app id that is not a valid id on the public route |
-| 409 | `in_use` | deleting a theme an assignment names |
-| 412 | `version_conflict` | `If-Match` is not the store's current version |
+| 404 | `not_found` | unknown route, theme, app or policy; an app id that is not a valid id on the public and `/v1/me` theme routes; an app that is not registered on the preference routes |
+| 409 | `in_use` | deleting a theme an assignment or a user or group policy names |
+| 409 | `locked` | saving a theme choice while an admin enforces a theme for this person |
+| 412 | `version_conflict` | `If-Match` is not the current store (or prefs) version |
 | 413 | `too_large` | body above 128 KiB (themes) or 32 KiB (others) |
 | 415 | `unsupported_media_type` | write body without `Content-Type: application/json` (charset utf-8 at most) |
 | 422 | `invalid_theme` | the theme breaks the token rules; `issues` lists them |
 | 422 | `id_mismatch` | the body's `id` differs from the path's |
 | 422 | `bad_id` | a theme id of `inherit` or `none` (reserved by assignments) |
-| 422 | `invalid` | an app's fields are out of shape; a favourite listed twice |
-| 422 | `unknown_theme`, `unknown_app` | an assignment or favourite names something that doesn't exist |
-| 422 | `missing_field` | assignments without `global` or `perApp`; favourites without `favourites` |
-| 422 | `too_many` | above 500 themes or 200 apps |
+| 422 | `invalid` | an app's fields are out of shape; a favourite listed twice; a policy `kind` other than `default` or `enforced` |
+| 422 | `bad_name` | a policy's user or group name is not 1-128 of `A-Za-z0-9._@-` |
+| 422 | `unknown_theme`, `unknown_app` | an assignment, favourite, saved choice or policy names something that doesn't exist |
+| 422 | `missing_field` | assignments without `global` or `perApp`; favourites without `favourites`; a preference without `theme`; a policy without `theme` or `kind` |
+| 422 | `too_many` | above 500 themes or 200 apps; above 1000 users with saved choices, or 1000 user (or group) policies |
 | 428 | `if_match_required` | write without `If-Match` |
-| 500 | `store_failed` | the store file could not be written (the cause is logged, not returned) |
+| 500 | `store_failed` | the store or prefs file could not be written (the cause is logged, not returned) |
 
 `issues` on `invalid_theme` is the validator's list, with the codes and JSON
 Pointer paths of `packages/tokens` (`errorCodes` in its manifest):
@@ -141,7 +143,8 @@ holds. NPM's Authelia bypass needs this path too (GET, HEAD).
 ## Admin routes (Authelia, admins with two-factor)
 
 themarr reads `Remote-User` and `Remote-Groups` (comma-separated, spaces
-trimmed) only here, and trusts them only because the CN pin proves the
+trimmed) only here and on the per-user routes below, and trusts them only
+because the CN pin proves the
 request came through tls-gateway, behind Authelia. The caller must be in the
 admin group (`-admin-group`, default `admins`).
 
@@ -182,11 +185,126 @@ request id, user, action, target id, status, result (`ok`, `refused`,
   whatever the body says. `inherit` and `none` are not theme ids.
 - **App**: `{"id", "name", "origins"}`. `id` as above, `name` 1-80 printable
   characters, `origins` at most 10 distinct `https://host[:port]` (lower
-  case, no path), the origins its pages run on (for T-089's credentialed
+  case, no path), the origins its pages run on (for `/v1/me`'s credentialed
   CORS).
 - **Assignments**: `{"global": theme id | null, "perApp": {app id: theme id |
   "inherit" | "none"}}`. An app missing from `perApp` inherits.
 - The last check is kept in memory only: it is empty after a restart.
+
+## Per-user themes (decision 0007)
+
+An app's theme for one person is the first layer that is set, top down:
+
+1. **enforced**: an admin's enforced policy for the person, else for one of
+   their groups. Nothing below can change it (`locked: true`).
+2. *local override*: in the browser only (the SDK, `themarr:<app>:local`);
+   the SDK ignores it when `locked` is true. The server never sees it.
+3. **saved**: the person's own choice for this app (follows them across
+   devices).
+4. **default**: an admin's default policy for the person, else for one of
+   their groups.
+5. **app**: the app's assignment (`none` stops here: no theme), then
+   **global**: the global default.
+6. nothing (204): the app keeps its own look.
+
+Conflicts: the person's own policy beats any group policy of the same
+kind; among their groups, the group whose name sorts first (byte order,
+so `Zed` before `alpha`) wins. Layers come first: a group's enforced
+policy beats the person's own default. A layer whose theme no longer
+exists is skipped. Policies apply to every app, registered or not, and
+also to apps whose assignment is `none`.
+
+The person is `Remote-User`, their groups `Remote-Groups`, read by the
+identity module (`internal/identity`, Authelia) on the tls-gateway hop
+only. themarr stores saved choices and policies in `prefs.json`, with its
+own version: these routes' `ETag` and `If-Match` are `"p<version>"`, never
+the store's `"<version>"`.
+
+### `GET|HEAD /v1/me/apps/{app}/theme` (any signed-in user)
+
+Behind Authelia (a session, any user). The SDK calls it with
+`credentials: "include"` and no request headers, so no preflight; themarr
+doesn't answer OPTIONS.
+
+- **200** `application/json`, a strong `ETag`: the public body plus where
+  it came from:
+
+  ```json
+  {"version": 3, "modes": ["light", "dark"], "tokens": {"light": {}, "dark": {}},
+   "locked": false, "source": "saved"}
+  ```
+
+  `source` is always one of `enforced`, `saved`, `default`, `app`,
+  `global`; `locked` is true exactly when `source` is `enforced`.
+- **304** when `If-None-Match` names the `ETag`. The tag covers the theme,
+  the store version, `source` and `locked`.
+- **204** when nothing applies for this person.
+- **401** `unauthenticated` without a usable `Remote-User` (in practice
+  Authelia answers first; the SDK then falls back to the public route).
+- **404** `not_found` when `{app}` is not a valid id.
+
+Headers on every answer of this route:
+
+```
+Cache-Control: private, no-cache
+Vary: Origin
+```
+
+and, only when the request has exactly one `Origin` that is one of the
+app's registered `origins` (exact match):
+
+```
+Access-Control-Allow-Origin: <that origin>
+Access-Control-Allow-Credentials: true
+Access-Control-Expose-Headers: ETag, X-Request-Id
+```
+
+Any other origin, an unregistered app, or no `Origin` gets no CORS headers
+(the browser then refuses the answer to the script).
+
+### `GET /v1/me/apps/{app}/preference`, `PUT /v1/me/apps/{app}/preference` (any signed-in user)
+
+The person's saved choice for a registered app, for themarr's own drawer
+page (same origin; no CORS). An app that is not registered is `404`.
+
+- **GET** → `{"app": "board", "theme": "ocean" | null, "locked": false}`,
+  `ETag: "p<version>"`. `locked`: an admin enforces a theme for this
+  person, so a saved choice has no effect.
+- **PUT** `{"theme": "<theme id>" | null}` → 200, the same body as GET and
+  the new `ETag`. `null` clears the choice. Needs what admin writes need
+  (below): `Origin`, `Sec-Fetch-Site: same-origin`, `Content-Type:
+  application/json`, `If-Match: "p<version>"`. Refusals: `422
+  unknown_theme`, `422 missing_field`, `409 locked` (setting a theme while
+  locked; clearing is always allowed), `412 version_conflict`.
+
+A saved choice may later name a deleted theme: GET still shows it, and the
+resolver skips it.
+
+### Policies (admins with two-factor, like the admin routes)
+
+| Route | Body | Answer |
+|---|---|---|
+| `GET /v1/policies` | | `{"users": {name: Policy}, "groups": {name: Policy}}` |
+| `GET /v1/policies/users/{name}` | | `Policy`; 404 when none |
+| `PUT /v1/policies/users/{name}` | `Policy` | 201 (new) or 200, the `Policy` |
+| `DELETE /v1/policies/users/{name}` | none | 204; 404 when none |
+| `GET`, `PUT`, `DELETE /v1/policies/groups/{name}` | as above | as above |
+
+- **Policy**: `{"theme": "<theme id>", "kind": "default" | "enforced"}`,
+  both required. The theme must exist (`422 unknown_theme`). `{name}` is a
+  user or group name, 1-128 of `A-Za-z0-9._@-` (`422 bad_name`); a group
+  whose name has other characters can't have a policy.
+- Every answer carries `ETag: "p<version>"`; writes need the admin write
+  checks with `If-Match: "p<version>"`.
+- Deleting a theme a policy names is `409 in_use`. The check and the
+  delete hold different locks, so a policy written at that same moment can
+  still name the deleted theme; the resolver skips it.
+
+Each write on these routes and on the preference route writes one audit
+line (JSON, stdout): request id, user, action (`put_preference`,
+`put_policy`, `delete_policy`), target (the app, or `users/<name>`,
+`groups/<name>`), status, result, problem code, prefs version. Never a
+body.
 
 ## The admin UI
 

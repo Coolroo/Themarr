@@ -24,6 +24,10 @@ import (
 	"time"
 
 	"github.com/Coolroo/themarr/internal/config"
+	"github.com/Coolroo/themarr/internal/identity"
+	"github.com/Coolroo/themarr/internal/prefs"
+	"github.com/Coolroo/themarr/internal/prefs/prefsapi"
+	"github.com/Coolroo/themarr/internal/resolve"
 	"github.com/Coolroo/themarr/internal/server"
 	"github.com/Coolroo/themarr/internal/store"
 	"github.com/Coolroo/themarr/internal/theme"
@@ -97,12 +101,13 @@ type app struct {
 	cfg   *config.Config
 	tls   *tls.Config
 	store *store.Store
+	prefs *prefs.Store
 	log   *slog.Logger
 }
 
-// prepare validates the settings and loads the certificates and the store.
-// A store file that can't be read stops themarr here; it is never
-// overwritten.
+// prepare validates the settings and loads the certificates, the store and
+// the prefs. A store or prefs file that can't be read stops themarr here;
+// it is never overwritten.
 func prepare(cfg *config.Config) (*app, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -118,21 +123,45 @@ func prepare(cfg *config.Config) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &app{cfg: cfg, tls: tlsCfg, store: st, log: slog.New(slog.NewJSONHandler(os.Stdout, nil))}, nil
+	pr, err := prefs.Open(cfg.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	return &app{cfg: cfg, tls: tlsCfg, store: st, prefs: pr, log: slog.New(slog.NewJSONHandler(os.Stdout, nil))}, nil
+}
+
+// publicResolver is the public route's resolver: the app's assignment,
+// then the global default (internal/resolve, no identity).
+func publicResolver(d *store.Data, app string) server.Resolution {
+	r := resolve.Public(d, app)
+	return server.Resolution{Theme: r.Theme, From: string(r.Source)}
 }
 
 // serve runs the TLS API on ln and the plain health check on hln until ctx
 // ends, then shuts both down.
 func serve(ctx context.Context, a *app, ln, hln net.Listener) error {
+	// The one identity module: Authelia's headers on the tls-gateway hop.
+	who := identity.Authelia{}
+	me := prefsapi.New(prefsapi.Config{
+		Store:        a.store,
+		Prefs:        a.prefs,
+		Identity:     who,
+		PublicOrigin: a.cfg.PublicOrigin,
+		AdminGroup:   a.cfg.AdminGroup,
+		Manifest:     theme.Default(),
+		Log:          a.log,
+	})
 	srv := server.New(a.store, server.Options{
 		ClientCN:     a.cfg.ClientCN,
 		PublicOrigin: a.cfg.PublicOrigin,
 		AdminGroup:   a.cfg.AdminGroup,
 		Manifest:     theme.Default(),
-		// T-089 wires its resolver, identity module and /v1/me routes here
-		// (Resolver, Identify, Routes).
-		UI:  webui.Handler(),
-		Log: a.log,
+		Resolver:     publicResolver,
+		Identify:     who.Identify,
+		Routes:       me.Routes(),
+		ThemeInUse:   a.prefs.ThemeInUse,
+		UI:           webui.Handler(),
+		Log:          a.log,
 	})
 	errLog := slog.NewLogLogger(slog.NewJSONHandler(os.Stderr, nil), slog.LevelWarn)
 	api := &http.Server{

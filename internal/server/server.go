@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Coolroo/themarr/internal/identity"
 	"github.com/Coolroo/themarr/internal/store"
 	"github.com/Coolroo/themarr/internal/theme"
 	"github.com/Coolroo/themarr/internal/tlsutil"
@@ -60,16 +61,13 @@ func DefaultResolver(d *store.Data, app string) Resolution {
 	return Resolution{}
 }
 
-// Identity is who sent an admin request.
-type Identity struct {
-	User   string
-	Groups []string
-}
+// Identity is who sent a request (internal/identity).
+type Identity = identity.Identity
 
 // Identify reads the caller's identity from a request on the trusted hop.
 // ok is false when the request carries no usable identity. It is the seam
-// for identity modules (T-089, internal/identity); the default is
-// RemoteHeaders.
+// for identity modules (internal/identity: a Source's Identify method);
+// the default is RemoteHeaders.
 type Identify func(r *http.Request) (id Identity, ok bool)
 
 // Route is an extra route mounted behind the same gate and headers, for
@@ -92,6 +90,11 @@ type Options struct {
 	UI           http.Handler // the admin UI at /; nil serves nothing there
 	Log          *slog.Logger // nil: discard
 	Now          func() time.Time
+
+	// ThemeInUse reports whether something outside the store (a user or
+	// group policy, internal/prefs) names a theme; deleting such a theme
+	// is refused with 409 in_use. nil: nothing outside the store does.
+	ThemeInUse func(id string) bool
 }
 
 // Server holds what a request needs.
@@ -183,6 +186,13 @@ func (s *Server) requireClient(next http.Handler) http.Handler {
 	})
 }
 
+// ProblemRecorder is a ResponseWriter that notes the problem code of an
+// answer, for an audit line. ProblemWith tells it the code.
+type ProblemRecorder interface {
+	http.ResponseWriter
+	RecordProblem(code string)
+}
+
 // Problem writes an RFC 9457 problem: a stable code and the request id.
 func Problem(w http.ResponseWriter, r *http.Request, status int, code, detail string) {
 	ProblemWith(w, r, status, code, detail, nil)
@@ -190,8 +200,8 @@ func Problem(w http.ResponseWriter, r *http.Request, status int, code, detail st
 
 // ProblemWith is Problem with extra members (such as a theme's issues).
 func ProblemWith(w http.ResponseWriter, r *http.Request, status int, code, detail string, extra map[string]any) {
-	if rec, ok := w.(*recorder); ok {
-		rec.code = code
+	if rec, ok := w.(ProblemRecorder); ok {
+		rec.RecordProblem(code)
 	}
 	body := map[string]any{}
 	for k, v := range extra {

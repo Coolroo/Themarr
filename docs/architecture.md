@@ -13,7 +13,11 @@ This page keeps the facts an agent needs while coding; it grows with the code.
   themarr `:8443`.
 - **Signed in:** the same path with Authelia in front; themarr trusts
   `Remote-User` and `Remote-Groups` only on that hop, and only on routes that
-  need them.
+  need them (admin, `/v1/me/...`, `/v1/policies`).
+- **Boot (personal):** the SDK also asks `GET /v1/me/apps/{app}/theme`
+  with the person's Authelia cookie (credentialed CORS, registered app
+  origins only). NPM must keep Authelia (any signed-in user) in front of
+  `/v1/me/`; if Authelia redirects, the SDK uses the public answer.
 - **Health:** `127.0.0.1:8081/healthz`, plain HTTP, loopback only.
 
 ## Parts and owners (board tasks)
@@ -45,18 +49,33 @@ that hold each defence: [security.md](security.md).
 | `internal/strictjson` | Strict body decoding (from Enforcarr) |
 | `internal/webui` | The admin UI from `embed.FS` (`dist/`: a placeholder until T-119) |
 | `internal/testutil` | Per-test CAs and certificates (from Enforcarr) |
+| `internal/identity` | Who is asking: the `Source` interface and its first module, `Authelia` (`Remote-User`, `Remote-Groups`) |
+| `internal/prefs` | `prefs.json`: saved choices (user → app → theme) and user and group policies, with the store's write rules |
+| `internal/prefs/prefsapi` | The `/v1/me/...` and `/v1/policies` routes, mounted through `Options.Routes` |
+| `internal/resolve` | The layered resolver: one function per layer, in `resolve.Layers` (decision 0007) |
 
 - **The token manifest** is embedded from `internal/theme/manifest.json`, a
   copy of `packages/tokens/tokens.manifest.json` (go:embed can't reach
   outside the package). `TestManifestCopyMatchesSource` fails when they
   differ: after regenerating the tokens package, copy the file again. The
   theme tests run every golden fixture in `packages/tokens/fixtures`.
-- **Seams for per-user themes (T-089).** `server.Options` takes a
-  `Resolver` (which theme an app gets, from one store snapshot), an
-  `Identify` (who the caller is; default `RemoteHeaders`) and extra
-  `Routes` (mounted behind the same gate and headers). `cmd/themarr/main.go`
-  wires them. Exported helpers: `Problem`, `ProblemWith`, `WriteJSON`,
-  `RequestID`.
+- **Seams for per-user themes.** `server.Options` takes a `Resolver`
+  (which theme an app gets on the public route, from one store snapshot:
+  `resolve.Public`), an `Identify` (who the caller is: an
+  `identity.Source`'s `Identify`; default `RemoteHeaders`, which is
+  `identity.Authelia`), extra `Routes` (mounted behind the same gate and
+  headers: `prefsapi`) and `ThemeInUse` (a policy names the theme, so its
+  delete is 409). `cmd/themarr/main.go` wires them. Exported helpers for
+  route packages: `Problem`, `ProblemWith`, `WriteJSON`, `RequestID`,
+  `CheckWrite` (Origin, Sec-Fetch-Site, If-Match with a tag prefix),
+  `ReadJSON`, `NoBody`, `NoneMatch`, and `ProblemRecorder` (a writer that
+  learns the problem code, for audit lines). `store.WriteAtomic` is the
+  store's atomic file write, which `prefs` uses too.
+- **Adding an identity module:** implement `identity.Source`, keep its
+  checks strict (refuse, never merge, a repeated header), and pass it to
+  both `server.Options.Identify` and `prefsapi.Config.Identity` in
+  `main.go`. **Adding a layer:** write one `resolve.Layer` function and
+  put it in `resolve.Layers`.
 - **Snapshots.** Readers take the current `*store.Data` without locking;
   a write copies it, applies the change, checks the rules, saves, then
   publishes the new snapshot. A snapshot is never changed after that.
@@ -77,3 +96,18 @@ instance data and never live in git.
 
 `version` is the store version, the admin routes' `ETag` and `If-Match`. A
 file themarr can't read stops the start and is left as it is.
+
+A second file, `prefs.json`, in the same folder, holds what people and
+admins choose (decision 0007), with its own version (ETags `"p<version>"`):
+
+```json
+{"format": 1, "version": 4,
+ "choices": {"alice": {"board": "ocean"}},
+ "policies": {"users": {"bob": {"theme": "night", "kind": "enforced"}},
+              "groups": {"family": {"theme": "forest", "kind": "default"}}}}
+```
+
+The same rules hold: atomic writes, one writer at a time, `If-Match`, and a
+file that can't be read stops the start. Names are Authelia's; themarr
+never stores who is in which group. Theme ids here may name a theme deleted
+later; the resolver skips them.
