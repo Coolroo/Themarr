@@ -1,0 +1,23 @@
+{
+  "name": "@themarr/palette",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Themarr's palette maker: Material Color Utilities turns a seed, a scheme style and a contrast level into a full themarr token set for light and dark.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node-hook": "./src/node-hook.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import ./src/node-hook.ts --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@material/material-color-utilities": "0.4.0",
+    "@themarr/tokens": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3"
+  }
+}
