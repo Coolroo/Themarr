@@ -22,6 +22,27 @@ func Handler() http.Handler {
 	return handler(dist)
 }
 
+// Drawer serves dist/drawer.html, the page the SDK's drawer frames (decision
+// 0009), for GET /drawer. It sets no Content-Security-Policy: the server
+// sets the drawer's own, with frame-ancestors from the app's origins.
+func Drawer() http.Handler {
+	return drawer(dist)
+}
+
+func drawer(root embed.FS) http.Handler {
+	page, err := fs.ReadFile(root, "dist/drawer.html")
+	if err != nil {
+		panic("webui: dist/drawer.html is missing")
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		if r.Method != http.MethodHead {
+			w.Write(page)
+		}
+	})
+}
+
 func handler(root embed.FS) http.Handler {
 	files, err := fs.Sub(root, "dist")
 	if err != nil {

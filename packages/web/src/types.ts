@@ -112,12 +112,28 @@ export interface BootOptions extends RenderOptions {
   signal?: AbortSignal;
   /** Called after a refresh changes the result (new theme, theme removed). */
   onChange?: (result: BootResult) => void;
+  /**
+   * The in-app drawer: a small themarr button that opens a sidebar to
+   * preview and keep themes. Off by default; browser only.
+   */
+  drawer?: boolean | DrawerOptions;
   /** @internal Tests: a fetch to use instead of globalThis.fetch. */
   _fetch?: FetchLike;
   /** @internal Tests: browser objects to use instead of the globals. */
   _env?: Env;
   /** @internal Tests: the focus debounce. Default 250. */
   _debounceMs?: number;
+  /** @internal Tests: how long the drawer page has to say "ready". Default 10000. */
+  _drawerReadyMs?: number;
+}
+
+/** Where the drawer's button sits. */
+export type DrawerPosition = "bottom-right" | "bottom-left";
+
+/** The drawer option of boot. */
+export interface DrawerOptions {
+  /** Default "bottom-right". The drawer opens on the same side. */
+  position?: DrawerPosition;
 }
 
 /**

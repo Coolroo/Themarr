@@ -114,6 +114,7 @@ const declFiles = [
   join(webSrc, "types.ts"),
   join(webSrc, "color.ts"),
   join(webSrc, "local.ts"),
+  join(webSrc, "drawer/protocol.ts"),
   join(webSrc, "boot.ts"),
 ];
 writeFileSync(join(dist, "themarr.d.ts"), joinDeclarations(join(webSrc, "index.ts"), declFiles));

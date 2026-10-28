@@ -14,6 +14,10 @@ import { ID_MAX_LENGTH, ID_PATTERN } from "@themarr/tokens";
 import { checkRender, cssFor, themeValues, type Render } from "./css.ts";
 import { clearLocalOverride, getLocalOverride } from "./local.ts";
 import { ThemeSheet } from "./sheet.ts";
+import { Drawer, drawerPosition } from "./drawer/drawer.ts";
+import type { DrawerHost } from "./drawer/host.ts";
+import { currentMode } from "./drawer/mode.ts";
+import type { DrawerCurrent } from "./drawer/protocol.ts";
 import type {
   BootOptions,
   BootResult,
@@ -96,6 +100,13 @@ class Booted {
   /** Node only: URL → the last 200 answer and its ETag, for If-None-Match. */
   readonly #cache = new Map<string, { etag: string; answer: Answer }>();
   #outage = false;
+  /** The last personal request answered 200 or 204: the person has a themarr session. */
+  #signedIn = false;
+  #locked = false;
+  /** The resolved theme's CSS, and a drawer preview's, which wins while set. */
+  #resolvedCss = "";
+  #previewCss: string | undefined;
+  #drawer: Drawer | undefined;
   #disposed = false;
   #running: Promise<void> | undefined;
   #again = false;
@@ -200,6 +211,8 @@ class Booted {
           : race(this.#request(`${this.#base}/v1/themes/${localId}/tokens`, "omit", ctrl.signal, true)),
       ]);
       if (loc.kind === "not-found") clearLocalOverride(this.#o.app, this.#storage());
+      this.#signedIn = this.#personal && (per.kind === "theme" || per.kind === "none");
+      this.#locked = per.kind === "theme" && per.answer.locked;
       return this.#pick(pub, per, loc);
     } finally {
       clearTimeout(timer);
@@ -256,7 +269,8 @@ class Booted {
       this.#outage = true;
       warn(this.#o.url, this.#o.app, r.reason ?? "unknown");
     }
-    this.#sheet?.set(r.css);
+    this.#resolvedCss = r.css;
+    this.#show();
     this.#fill(r);
     const w = this.#env.window;
     const d = this.#env.document;
@@ -264,7 +278,57 @@ class Booted {
       w.addEventListener("focus", this.#onFocus);
       d.addEventListener("visibilitychange", this.#onVisible);
     }
+    this.#mountDrawer();
     return this.result;
+  }
+
+  /** The page shows the drawer's preview while there is one, else the resolved theme. */
+  #show(): void {
+    this.#sheet?.set(this.#previewCss ?? this.#resolvedCss);
+  }
+
+  /** The drawer, when the app asked for it and this is a browser (never in Node). */
+  #mountDrawer(): void {
+    const position = drawerPosition(this.#o.drawer);
+    const doc = this.#env.document as unknown as Document | undefined;
+    const win = this.#env.window as unknown as Window | undefined;
+    if (position === null || doc === undefined || win === undefined || typeof doc.createElement !== "function") return;
+    try {
+      this.#drawer = new Drawer(this.#drawerHost(doc, win), position);
+    } catch {
+      // A browser without shadow DOM: no drawer; the theme still applies.
+    }
+  }
+
+  #drawerHost(doc: Document, win: Window): DrawerHost {
+    return {
+      app: this.#o.app,
+      base: this.#base,
+      origin: new URL(this.#o.url).origin,
+      nonce: this.#o.nonce,
+      fetch: this.#fetch,
+      document: doc,
+      window: win,
+      readyMs: this.#o._drawerReadyMs ?? 10_000,
+      storage: () => this.#storage(),
+      signedIn: () => this.#signedIn,
+      current: (): DrawerCurrent => {
+        const r = this.result;
+        const cur: DrawerCurrent = { source: r.status === "applied" && r.source !== undefined ? r.source : "none", locked: this.#locked };
+        if (r.status === "applied" && r.version !== undefined) cur.version = r.version;
+        const local = getLocalOverride(this.#o.app, this.#storage());
+        if (local !== null) cur.local = local;
+        return cur;
+      },
+      mode: () => currentMode(this.#render, doc, win),
+      preview: (theme, mode) => {
+        if (this.#disposed) return;
+        if (theme === undefined) this.#previewCss = undefined;
+        else this.#previewCss = cssFor(theme, mode === undefined ? this.#render : { ...this.#render, mode });
+        this.#show();
+      },
+      refresh: () => this.refresh(),
+    };
   }
 
   #schedule(): void {
@@ -313,10 +377,11 @@ class Booted {
     const same =
       before.status === r.status &&
       before.source === r.source &&
-      (this.#sheet === undefined ? JSON.stringify(before.theme) === JSON.stringify(r.theme) : this.#sheet.css === r.css) &&
+      (this.#sheet === undefined ? JSON.stringify(before.theme) === JSON.stringify(r.theme) : this.#resolvedCss === r.css) &&
       before.version === r.theme?.version;
     if (same) return;
-    this.#sheet?.set(r.css);
+    this.#resolvedCss = r.css;
+    this.#show();
     this.#fill(r);
     try {
       this.#o.onChange?.(this.result);
@@ -330,6 +395,8 @@ class Booted {
     this.#disposed = true;
     if (this.#timer !== undefined) clearTimeout(this.#timer);
     this.#abort?.abort("disposed");
+    this.#drawer?.destroy();
+    this.#drawer = undefined;
     this.#env.window?.removeEventListener("focus", this.#onFocus);
     this.#env.document?.removeEventListener("visibilitychange", this.#onVisible);
     this.#sheet?.clear();
@@ -351,6 +418,7 @@ function checkBoot(o: BootOptions): { base: string; render: Render; timeoutMs: n
     return "bad option timeoutMs";
   }
   if (o.nonce !== undefined && (typeof o.nonce !== "string" || o.nonce === "")) return "bad option nonce";
+  if (o.drawer !== undefined && o.drawer !== false && drawerPosition(o.drawer) === null) return "bad option drawer";
   const render = checkRender(o);
   if (typeof render === "string") return render;
   return { base: url.base, render, timeoutMs };
