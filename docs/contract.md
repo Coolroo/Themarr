@@ -179,9 +179,10 @@ beyond the colours is.
 
 themarr reads `Remote-User` and `Remote-Groups` (comma-separated, spaces
 trimmed) only here and on the per-user routes below, and trusts them only
-because the CN pin proves the
-request came through tls-gateway, behind Authelia. The caller must be in the
-admin group (`-admin-group`, default `admins`).
+because the CN pin proves the request came through tls-gateway, and
+tls-gateway's themarr port lets in only NPM, behind Authelia (a deployment
+requirement: security.md, "What themarr assumes"). The caller must be in
+the admin group (`-admin-group`, default `admins`).
 
 Every answer carries `ETag: "<store version>"`: the version of the whole
 store when it was read or written. Every write must send it back.
