@@ -1,0 +1,26 @@
+{
+  "name": "@themarr/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Themarr's web SDK: the boot hook that applies an app's theme before it draws, in the browser and in Node.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./local": "./src/local.ts",
+    "./dist/themarr.js": "./dist/themarr.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "build": "node scripts/build.ts"
+  },
+  "devDependencies": {
+    "@themarr/tokens": "0.1.0",
+    "@types/node": "24.19.2",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  }
+}
