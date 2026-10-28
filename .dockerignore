@@ -1,0 +1,11 @@
+# The image's build context. The Dockerfile copies package*.json, packages,
+# go.mod, cmd and internal; the ui stage installs the modules and builds the
+# UI and the SDK itself, so nothing installed or built in a checkout (or a
+# worktree, or git's own files) may reach the image (T-115). The Go stage
+# takes internal/webui/dist from the ui stage, never from here.
+.git
+worktrees
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo

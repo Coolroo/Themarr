@@ -4,7 +4,10 @@
 # Stage "ui" builds the admin UI and the drawer page (packages/admin,
 # decision 0010) into internal/webui/dist; the Go stage embeds them. The
 # files in git under internal/webui/dist are placeholders for the Go tests.
-# Build from a clean checkout: COPY packages takes any node_modules with it.
+# .dockerignore keeps node_modules, dist, .git and worktrees out of the
+# context, so a checkout's own installs and builds never reach the image.
+# Base images are pinned by tag; pinning them by digest is home-server
+# board T-070.
 
 FROM node:24.22.1-bookworm-slim AS ui
 WORKDIR /src
