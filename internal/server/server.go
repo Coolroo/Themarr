@@ -3,8 +3,9 @@
 // certificate against the home CA, and its common name must be the one
 // configured (tls-gateway). Then:
 //
-//   - public routes (an app's theme, a theme's tokens) answer anyone, read
-//     no identity headers, and hold colours only (decision 0004);
+//   - public routes (an app's theme, a theme's tokens, the catalog) answer
+//     anyone, read no identity headers, and hold colours and theme names
+//     only (decisions 0004, 0009);
 //   - admin routes need Remote-User and the admin group in Remote-Groups,
 //     which are trusted only because the CN pin proves the request came
 //     through tls-gateway, behind Authelia;
@@ -88,6 +89,7 @@ type Options struct {
 	Identify     Identify     // nil: RemoteHeaders
 	Routes       []Route      // extra routes
 	UI           http.Handler // the admin UI at /; nil serves nothing there
+	Drawer       http.Handler // the drawer page at /drawer (decision 0009); nil: 404
 	Log          *slog.Logger // nil: discard
 	Now          func() time.Time
 
@@ -132,6 +134,10 @@ func (s *Server) Handler() http.Handler {
 	// Public: no identity, colours only, CORS for any origin.
 	mux.Handle("GET /v1/apps/{app}/theme", public(http.HandlerFunc(s.appTheme)))
 	mux.Handle("GET /v1/themes/{id}/tokens", public(http.HandlerFunc(s.themeTokens)))
+	mux.Handle("GET /v1/catalog", public(http.HandlerFunc(s.catalog)))
+
+	// The drawer page: the one answer that may be framed (drawer.go).
+	mux.HandleFunc("GET "+DrawerPath, s.drawerPage)
 
 	// Admin reads.
 	mux.HandleFunc("GET /v1/themes", s.admin(s.listThemes))
@@ -263,10 +269,3 @@ func withHeaders(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
-// frameable says whether a page may be framed. Nothing may, yet.
-//
-// TODO(T-085, T-119): the SDK drawer at /drawer is framed by registered
-// apps. When it is built, return true for /drawer only, and give it
-// "frame-ancestors" with the registered app origins instead of 'none'.
-func frameable(*http.Request) bool { return false }

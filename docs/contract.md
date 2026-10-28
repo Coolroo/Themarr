@@ -21,10 +21,10 @@ certificate. Code: `internal/server`. Token rules: `packages/tokens/README.md`.
 |---|---|
 | `X-Request-Id` | a new random id; the client's own is ignored. Problems repeat it as `request_id`. |
 | `X-Content-Type-Options` | `nosniff` |
-| `X-Frame-Options` | `DENY` (a future `/drawer`, T-085/T-119, will be the one exception) |
+| `X-Frame-Options` | `DENY`, except GET and HEAD of `/drawer` for a registered app with origins (below) |
 | `Referrer-Policy` | `no-referrer` |
-| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'`; the admin UI's pages get `default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'none'` |
-| `Cache-Control` | `no-store`, except public routes (`no-cache`) and the UI (`no-cache`) |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'`; the admin UI's pages get `default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'none'`; `/drawer` gets the same with its own `frame-ancestors` (below) |
+| `Cache-Control` | `no-store`, except public routes (`no-cache`), the UI and `/drawer` (`no-cache`) |
 
 ## Errors
 
@@ -74,9 +74,12 @@ Pointer paths of `packages/tokens` (`errorCodes` in its manifest):
 "issues": [{"code": "missing_token", "path": "/tokens/dark/primary", "message": "required token \"primary\" is missing"}]
 ```
 
-## Public routes (no sign-in; decision 0004)
+## Public routes (no sign-in; decisions 0004, 0009)
 
-NPM bypasses Authelia for these, GET and HEAD only. themarr never reads
+NPM bypasses Authelia for these three, GET and HEAD only:
+`/v1/apps/{app}/theme`, `/v1/themes/{id}/tokens` and `/v1/catalog`. The
+deploy runbook's bypass rule must list all three, and nothing else
+(never `/v1/me/`, `/drawer` or the UI). themarr never reads
 `Remote-User` or `Remote-Groups` here: anybody can send them on this path.
 Every answer, errors included, carries:
 
@@ -139,6 +142,32 @@ only the theme id). The same 200 body, `ETag`, 304 and headers as above;
 **404** `not_found` for an unknown id. It shows only what the app route
 shows of any assigned theme (version, modes, tokens), so decision 0004
 holds. NPM's Authelia bypass needs this path too (GET, HEAD).
+
+### `GET|HEAD /v1/catalog`
+
+Every theme's name and a few colours, for the SDK's drawer (a guest's
+tiles; decision 0009). Theme names are public; nothing else about a theme
+beyond the colours is.
+
+- **200** `application/json`, a strong `ETag`:
+
+  ```json
+  {"themes": [
+     {"id": "indigo", "name": "Coolroo Indigo", "version": 3, "modes": ["light", "dark"],
+      "swatch": {"light": {"primary": "#5146D9", "background": "#FAFAFF", "foreground": "#18191D", "tag": "#E0662F"},
+                 "dark":  {"primary": "#8C84FF", "background": "#121318", "foreground": "#ECECEF"}}}],
+   "favourites": ["indigo"]}
+  ```
+
+  `themes` is sorted by name (case folded), then id. `swatch` has one
+  entry per listed mode, each colour the token's `hex` in upper case
+  (`#RRGGBB`, no alpha); `tag` only when the theme has that token.
+  `favourites` lists the admins' favourite theme ids, in their order. No
+  source, seeds, assignments, apps or origins.
+- **304** when `If-None-Match` names the `ETag` (a hash of the body: it
+  changes exactly when the body does).
+- The same public headers as above. NPM's Authelia bypass needs this path
+  (GET, HEAD).
 
 ## Admin routes (Authelia, admins with two-factor)
 
@@ -311,6 +340,50 @@ body.
 `GET /` and any path outside `/v1/` serve the admin UI from the binary
 (`internal/webui`, an `index.html` fallback for the UI's own routes). It
 uses the admin routes above from the same origin.
+
+## The drawer page (decision 0009)
+
+`GET|HEAD /drawer?app=<id>` serves `internal/webui/dist/drawer.html` (a
+placeholder until T-119 builds the page). NPM keeps Authelia in front of it
+(any signed-in user, one factor; the admin controls inside it call the
+admin routes, which need two-factor). It is the only answer that may be
+framed:
+
+- `?app=` names exactly one valid id of a registered app with origins →
+  `Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src
+  'none'; form-action 'self'; frame-ancestors <the app's origins, space
+  separated>`, and no `X-Frame-Options`.
+- Anything else (no `app`, two, an invalid or unregistered id, an app
+  with no origins) → the same policy with `frame-ancestors 'none'`, and
+  `X-Frame-Options: DENY`. The page still loads on its own (a new tab).
+- `Cache-Control: no-cache`. themarr reads no identity header here; the
+  page's own calls (`/v1/me/...`, admin routes) do.
+
+The SDK frames it in apps that boot with `drawer: true` and talks to it
+with `postMessage`, protocol version 1 (`packages/web/src/drawer/protocol.ts`,
+`packages/web/README.md`, "The drawer"). Every message is
+`{"themarr": 1, "type": ..., ...}` with exactly these fields:
+
+| From | `type` | Fields | The SDK |
+|---|---|---|---|
+| SDK | `hello` | `app`, `mode` (`light`\|`dark`, what the app shows), `current`: `{source, locked, version?, local?}` | sends it after each `ready`, and after each refresh it does for the page |
+| page | `ready` | | answers `hello` |
+| page | `preview` | `body` (the public theme body: `version`, `modes`, `tokens`), `mode?` | checks `body` with the token rules, shows it in this tab only |
+| page | `clearPreview` | | shows the resolved theme again |
+| page | `keepLocal` | `themeId` | sets the local override (not while locked), refreshes |
+| page | `clearLocal` | | clears the local override, refreshes |
+| page | `saved` | `scope`: `me`\|`app` | refreshes (`me` also clears the local override) |
+| page | `close` | | closes the drawer and drops any preview |
+
+`current.source` is the boot result's source (`enforced`, `local`,
+`saved`, `default`, `app`, `global`, `public`) or `none`. The SDK accepts
+a message only from themarr's exact origin and its own iframe's window,
+and posts only with that exact origin as `targetOrigin`. The page does the
+same in reverse: it posts `ready` (which carries nothing) to
+`window.parent` with `targetOrigin` `"*"`, accepts `hello` only when
+`event.source === window.parent` and `parseAppMessage` passes, keeps that
+`event.origin` (the browser framed the page only for the app's registered
+origins), and posts every later message with that exact origin.
 
 ## The health listener
 

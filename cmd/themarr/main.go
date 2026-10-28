@@ -161,6 +161,7 @@ func serve(ctx context.Context, a *app, ln, hln net.Listener) error {
 		Routes:       me.Routes(),
 		ThemeInUse:   a.prefs.ThemeInUse,
 		UI:           webui.Handler(),
+		Drawer:       webui.Drawer(),
 		Log:          a.log,
 	})
 	errLog := slog.NewLogLogger(slog.NewJSONHandler(os.Stderr, nil), slog.LevelWarn)

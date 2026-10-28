@@ -24,7 +24,7 @@ each defence true.
 | Enumerating registered apps | An unknown app id is answered exactly like a registered app without an assignment (global default or 204) | TestNothingSetIs204, TestResolutionOrder |
 | Memory growth from made-up app ids | The last check is kept only for registered apps and dropped when an app is deleted | TestLastCheck |
 | Theme bodies in logs | One audit line per write attempt: who, what, result, never the body | TestAuditLine |
-| The admin UI framed (clickjacking) or loading foreign code | `X-Frame-Options: DENY` and `frame-ancestors 'none'` everywhere; the UI's CSP allows its own origin only; API answers `default-src 'none'` | TestCommonHeaders; `internal/webui` TestServesIndexWithCSP |
+| The admin UI framed (clickjacking) or loading foreign code | `X-Frame-Options: DENY` and `frame-ancestors 'none'` everywhere but `/drawer` (below); the UI's CSP allows its own origin only; API answers `default-src 'none'` | TestCommonHeaders; `internal/webui` TestServesIndexWithCSP |
 | Admin answers cached by a proxy or the browser | `Cache-Control: no-store` on everything but the public routes and the UI | TestCommonHeaders |
 | Plain HTTP on the network | The API listener is TLS only; the plain health listener must be a loopback IP (config validation), is never published, and serves only `GET /healthz` | `internal/config` TestValidateRefuses; `cmd/themarr` TestHealthcheck, TestHealthListenerServesOnlyHealthz |
 | Slow or huge requests holding connections | Read-header, read, write and idle timeouts; 16 KiB of headers; body limits of 128 KiB (themes) and 32 KiB (others); at most 500 themes and 200 apps | `cmd/themarr/main.go`; TestPutThemeRefuses; `internal/store` TestRulesAreKept |
@@ -53,6 +53,24 @@ unless named otherwise.
 | Policies reaching anonymous visitors through forged headers | The public route resolves without identity; policies and choices never apply there | TestPublicRouteIgnoresPolicies; `internal/resolve` TestNobodyGetsOnlyTheAppLayers |
 | Preference and policy bodies in logs | One audit line per write attempt: user, action, target, status, code, prefs version; never the body | TestAuditLines |
 
+### The in-app drawer (decision 0009)
+
+Server tests are in `internal/server`; SDK tests in
+`packages/web/test/drawer`.
+
+| Threat | Defence | Kept true by |
+| --- | --- | --- |
+| Another site framing a signed-in themarr page (clickjacking an admin's session) | Only GET and HEAD of `/drawer` may be framed (`frameable`), and only by the exact origins registered for the app in `?app=` (`frame-ancestors`, no wildcard); a missing, repeated, invalid or unregistered app, or one without origins, gets `frame-ancestors 'none'` and `X-Frame-Options: DENY`; every other answer keeps `DENY` and `'none'` | TestDrawerFrameAncestorsAreTheAppsOrigins, TestDrawerWithoutARegisteredAppIsNeverFramed, TestOnlyTheDrawerIsFramable, TestFrameable, TestDrawerWithoutAPageIs404AndDenied; `cmd/themarr` TestServe |
+| A header injected through an app's origin | Origins are checked by the store's rules, and again against a strict `https://host[:port]` pattern before they go into the header | `frameOrigin` in `internal/server/drawer.go`; TestDrawerFrameAncestorsAreTheAppsOrigins |
+| The app (or a script on it) using the person's rights | Every save happens inside themarr's page, same origin, with the write checks; the app only previews and refreshes on the page's messages; no write route has CORS | TestWriteChecks; the SDK has no write call (`src/drawer/frame.ts`) |
+| A forged message changing the app's theme (another window, another origin, a navigated iframe) | The SDK accepts a message only when `event.origin` is themarr's exact origin, `event.source` is its own iframe's window, and the data is exactly one protocol shape (a preview's theme through the token rules); anything else is ignored | "ignores messages from another origin, another window, or of another shape"; `protocol.test.ts` |
+| The SDK's messages read by another frame | It posts only to its own iframe, with `targetOrigin` themarr's exact origin, never `*` | "answers ready with hello, posted to the exact themarr origin", "keepLocal keeps the theme..." |
+| The drawer page navigating the app | `sandbox` without `allow-top-navigation` on the iframe | "frames /drawer?app=<id> with a sandbox that can't navigate the app" |
+| A preview outliving the drawer, or kept without consent | A preview is a second CSS text in this tab only; `clearPreview` and closing remove it; nothing is stored or sent | "preview changes this tab only; ...", "Reset and closing restore..." |
+| A locked person keeping another theme through the drawer | `keepLocal` is ignored while locked (boot also ignores the local override then) | "a locked person can preview but not keep" |
+| Theme names or app CSS injecting into the drawer, or the drawer breaking the app | All drawer DOM is in one shadow root; names go in as text only; colours only as checked `#RRGGBB` custom properties; styles as a constructable sheet or a nonce'd `<style>` | "lists the catalog: ... names as text", "uses a <style> with the nonce ..." |
+| The catalog leaking more than names and colours, or reading forged identity | `/v1/catalog` holds id, name, version, modes, swatch colours and favourites only, and never reads `Remote-*` | TestCatalogShapeAndSort, TestCatalogIgnoresRemoteHeaders |
+
 ## What themarr assumes about the hops before it
 
 - **NPM and Authelia set the identity headers.** On routes behind Authelia,
@@ -62,8 +80,9 @@ unless named otherwise.
 - **tls-gateway is the only holder of the `tls-gateway` client key.** The CN
   pin is only as strong as that key. The home CA must never issue another
   certificate with that CN (`/etc/paseo/cert-names-denied`).
-- **The Authelia bypass covers only** `GET|HEAD /v1/apps/{app}/theme` and
-  `GET|HEAD /v1/themes/{id}/tokens`. Everything else, the UI included, needs
+- **The Authelia bypass covers only** `GET|HEAD /v1/apps/{app}/theme`,
+  `GET|HEAD /v1/themes/{id}/tokens` and `GET|HEAD /v1/catalog`
+  (decision 0009). Everything else, the UI included, needs
   a session; admin routes need the admins group with two-factor.
   `/v1/me/` and `/drawer` need a session of any user; `/v1/policies` is an
   admin route (admins, two-factor). A bypass rule that matched `/v1/me/`
@@ -77,9 +96,14 @@ unless named otherwise.
 
 - **Certificate rotation needs a restart.** The server certificate and the
   client CA are read at start (as in Enforcarr).
-- **The drawer (T-085, T-119)** is a `/drawer` page framed by registered
-  apps; it needs its own rows here, and the `frameable` hook in
-  `internal/server` must stay limited to `/drawer`.
+- **The drawer page itself (T-119)** must keep the protocol's rules on its
+  side: accept `hello` only from `window.parent` and through
+  `parseAppMessage`, and post later messages only to the origin that hello
+  came from (contract.md, "The drawer page"). Its rows here grow with it.
+- **A registered origin may frame the drawer.** A script on a registered
+  app origin can show themarr's page to a signed-in person inside that app
+  and overlay it; every write still needs a click inside the page, and
+  admin writes need two-factor.
 - **Prefs writes share one version**, so two people saving at the same
   moment make one of them retry (412). Per-user versions can come later
   (decision 0007).

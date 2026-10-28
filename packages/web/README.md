@@ -63,6 +63,7 @@ createRoot(el).render(<App />);
 | `nonce` | none | For the fallback `<style>` element (strict CSP) |
 | `signal` | none | Stops boot; it resolves `unreachable` |
 | `onChange` | none | Called after a refresh changes the result |
+| `drawer` | off | `true` or `{position: "bottom-right" \| "bottom-left"}`: the in-app drawer (below). Browser only |
 
 A bad option (an `http://` url, a bad app ID, a map variable that is not
 `--name`) resolves `unreachable` at once, without a request, and the warning
@@ -205,6 +206,78 @@ clearLocalOverride("vibe-kanban");
 await theme.refresh();                      // apply it now
 ```
 
+## The drawer
+
+A small themarr button in the app's corner opens a sidebar where people
+preview themes live on the app (this tab only), keep one for themselves,
+and (admins) assign one to the app and edit themes. Turn it on per app:
+
+```ts
+const theme = await themarr.boot({ app: "vibe-kanban", url: "https://themarr.coolroo.dev", drawer: true });
+// or drawer: { position: "bottom-left" }
+```
+
+- **Signed-in people** (the personal request answered 200 or 204) get
+  themarr's own page, `https://themarr.coolroo.dev/drawer?app=<id>`, in an
+  iframe. Every save happens inside that page, on themarr; the app never
+  gets any right. Themarr lets only the app's registered origins frame it,
+  so register the app (with its origins) first.
+- **Guests** (no themarr session, such as Seerr's Plex users) get a panel
+  the SDK draws itself: the themes from `GET /v1/catalog` (favourites
+  first), a preview on click, and "Keep in this browser" (the local
+  override). Nothing is saved on themarr.
+- **Previews change this tab only** and never persist: closing the drawer
+  (the × button, Escape, or the page's `close`) shows the resolved theme
+  again. The boot result does not change while previewing.
+- **Hide button** closes the drawer and leaves a thin tab at the screen's
+  edge, remembered in `localStorage` (`themarr:<app>:launcher` =
+  `hidden`); clicking the tab brings the button back.
+- **Its own look:** everything is in one `<themarr-drawer>` element with a
+  shadow root, so the app's CSS can't reach it and it can't reach the app.
+  It never takes the app's theme. Its styles are a constructable sheet;
+  without them, a `<style>` with `nonce`. A strict CSP needs nothing more
+  (colours are set through the CSSOM, never as style attributes), except
+  `frame-src https://themarr.coolroo.dev` if the app limits frames.
+- **Accessible:** the button and tab are real buttons with labels; the
+  panel is a `role="dialog"` with a label; focus moves into it on open and
+  back on close; Escape closes it.
+- **When the page can't load** (no session, or Authelia refuses to be
+  framed), after 10 s the drawer offers "Sign in to themarr" in a new tab.
+- In Node, `drawer` does nothing.
+
+### The drawer protocol (for themarr's drawer page)
+
+The SDK and the page talk with `postMessage`, version 1. The types and
+parsers are exported from `src/drawer/protocol.ts` (and from the vendored
+file): `DRAWER_PROTOCOL`, `parseDrawerMessage`, `parseAppMessage`,
+`ToDrawer`, `FromDrawer` and one type per message. Every message is
+`{themarr: 1, type, ...}` with exactly these fields:
+
+| Direction | `type` | Fields | What happens |
+|---|---|---|---|
+| SDK → page | `hello` | `app`, `mode` (`"light"` \| `"dark"`: what the app shows), `current: {source, locked, version?, local?}` | after each `ready`, and after each refresh the page asked for |
+| page → SDK | `ready` | | the SDK answers `hello` |
+| page → SDK | `preview` | `body`: `{version, modes, tokens}` (as `GET /v1/themes/{id}/tokens` sends it), `mode?` | shown in this tab only; `mode` forces that palette |
+| page → SDK | `clearPreview` | | the resolved theme again |
+| page → SDK | `keepLocal` | `themeId` | sets the local override (ignored while locked), refreshes |
+| page → SDK | `clearLocal` | | clears the local override, refreshes |
+| page → SDK | `saved` | `scope`: `"me"` \| `"app"` | refreshes; `"me"` also clears the local override, which would hide the saved choice |
+| page → SDK | `close` | | closes the drawer |
+
+- The SDK accepts a message only when `event.origin` is themarr's exact
+  origin, `event.source` is its iframe's window, and `parseDrawerMessage`
+  passes (a preview's body through the token rules). Anything else is
+  ignored without a word. It posts only to its iframe, with themarr's
+  exact origin as `targetOrigin`.
+- The page posts `ready` to `window.parent` with `targetOrigin` `"*"` (it
+  carries nothing), accepts `hello` only from `window.parent` through
+  `parseAppMessage`, and posts everything else to the origin that hello
+  came from. Themarr's `frame-ancestors` guarantees that origin is one the
+  app registered.
+- Escape inside the iframe never reaches the app: the page sends `close`.
+- The SDK draws the drawer's header (title, Hide button, ×); the page fills
+  the rest.
+
 ## The wire contract
 
 What the SDK expects from the server:
@@ -219,6 +292,12 @@ What the SDK expects from the server:
 - `GET /v1/me/apps/{app}/theme` (T-089): behind Authelia; the same body plus
   optional `"locked": true` and `"source": "enforced"|"saved"|"default"|"app"|"global"`;
   `204` when none. CORS must allow the app's origin with credentials.
+- `GET /v1/catalog` (the guest drawer): `{"themes": [{"id", "name",
+  "version", "modes", "swatch": {"<mode>": {"primary", "background",
+  "foreground", "tag"?}}}], "favourites": [id, …]}`, colours as `#RRGGBB`;
+  public, like the theme routes.
+- `GET /drawer?app=<id>` (the signed-in drawer): themarr's page, framed only
+  by the app's registered origins.
 - Tokens are DTCG objects as in `@themarr/tokens`: colours
   `{"$type": "color", "$value": {"colorSpace": "srgb", "components": [r, g, b], "hex": "#rrggbb", "alpha"?: a}}`,
   `radius` `{"$type": "dimension", "$value": {"value": n, "unit": "px"|"rem"}}`.
@@ -244,7 +323,13 @@ scripts/test-ts.sh build      # dist/themarr.js and dist/themarr.d.ts
 | `src/wire.ts` | Checks an answer with `@themarr/tokens` |
 | `src/sheet.ts` | The one stylesheet (constructable, or `<style>`) |
 | `src/local.ts` | The local-override helpers |
-| `src/drawer/` | The drawer (T-085) |
+| `src/drawer/drawer.ts` | The drawer: launcher, hide tab, panel, focus, Escape (one shadow root) |
+| `src/drawer/frame.ts` | Signed in: the iframe and its message checks |
+| `src/drawer/guest.ts` | Guests: the catalog panel and the local override |
+| `src/drawer/protocol.ts` | The postMessage protocol: types and parsers (the drawer page imports them) |
+| `src/drawer/host.ts`, `mode.ts`, `dom.ts`, `styles.ts` | What the drawer needs from boot; the app's mode; element helpers; its CSS |
 
 Tests inject a fetch (`_fetch`) and fake browser objects (`_env`); both are
-private options.
+private options. The drawer tests (`test/drawer/`) use a small fake DOM with
+shadow roots, focus and message events (`test/drawer/dom.ts`); the timeout
+before "Sign in to themarr" is `_drawerReadyMs`.

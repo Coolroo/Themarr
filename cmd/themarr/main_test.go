@@ -208,6 +208,20 @@ func TestServe(t *testing.T) {
 	}
 	resp.Body.Close()
 
+	// The drawer page and the catalog are wired (decision 0009). No app
+	// is registered, so nobody may frame the drawer.
+	resp, err = testutil.Client(s.ca, &gateway).Get("https://" + ln.Addr().String() + "/drawer?app=board")
+	if err != nil || resp.StatusCode != http.StatusOK || resp.Header.Get("X-Frame-Options") != "DENY" ||
+		!strings.HasSuffix(resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'") {
+		t.Fatalf("drawer: %v %v", resp, err)
+	}
+	resp.Body.Close()
+	resp, err = testutil.Client(s.ca, &gateway).Get("https://" + ln.Addr().String() + "/v1/catalog")
+	if err != nil || resp.StatusCode != http.StatusOK || resp.Header.Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatalf("catalog: %v %v", resp, err)
+	}
+	resp.Body.Close()
+
 	npm := s.ca.ClientCert(t, "npm-homepi")
 	resp, err = testutil.Client(s.ca, &npm).Get(url)
 	if err != nil || resp.StatusCode != http.StatusForbidden {
