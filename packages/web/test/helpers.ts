@@ -40,9 +40,21 @@ export interface Call {
   init: FetchInit;
 }
 
+/**
+ * Throw as a browser does when a method runs on the wrong object, such as
+ * `const f = window.matchMedia; f(q)` or `host.fetch(url)`: "Illegal
+ * invocation". The fakes call it first, so an SDK that takes a browser API
+ * off its object and calls it unbound fails the tests.
+ */
+export function owner(self: unknown, ok: boolean, what: string): void {
+  if (!ok) throw new TypeError(`Failed to execute '${what}': Illegal invocation (this is ${self === undefined ? "undefined" : typeof self})`);
+}
+
 export function fakeFetch(routes: Record<string, Route>): { fetch: FetchLike; calls: Call[] } {
   const calls: Call[] = [];
-  const fetch: FetchLike = async (url, init) => {
+  // A browser's fetch works only on the global object (or called bare).
+  async function strictFetch(this: unknown, url: string, init: FetchInit): Promise<FetchResponse> {
+    owner(this, this === undefined || this === globalThis, "fetch");
     if (!url.startsWith(BASE)) throw new TypeError(`unexpected URL ${url}`);
     const path = url.slice(BASE.length);
     calls.push({ path, init });
@@ -62,7 +74,8 @@ export function fakeFetch(routes: Record<string, Route>): { fetch: FetchLike; ca
         return structuredClone(r.body);
       },
     };
-  };
+  }
+  const fetch: FetchLike = strictFetch;
   return { fetch, calls };
 }
 
@@ -108,10 +121,12 @@ class FakeHead {
 class Events {
   readonly listeners = new Map<string, Set<() => void>>();
   addEventListener(type: string, fn: () => void): void {
+    owner(this, this instanceof Events, "addEventListener");
     if (!this.listeners.has(type)) this.listeners.set(type, new Set());
     this.listeners.get(type)!.add(fn);
   }
   removeEventListener(type: string, fn: () => void): void {
+    owner(this, this instanceof Events, "removeEventListener");
     this.listeners.get(type)?.delete(fn);
   }
   fire(type: string): void {
@@ -133,9 +148,11 @@ export class FakeDocument extends Events implements EnvDocument {
     if (constructable) this.adoptedStyleSheets = [];
   }
   createElement(tag: "style"): EnvElement {
+    owner(this, this instanceof FakeDocument, "createElement");
     return new FakeElement(tag);
   }
   getElementById(id: string): EnvElement | null {
+    owner(this, this instanceof FakeDocument, "getElementById");
     return this.head.children.find((c) => c.id === id) ?? null;
   }
   /** Add an element as the server would have rendered it. */
@@ -160,14 +177,17 @@ export class FakeStorage implements EnvStorage {
   readonly map = new Map<string, string>();
   blocked = false;
   getItem(key: string): string | null {
+    owner(this, this instanceof FakeStorage, "getItem");
     if (this.blocked) throw new Error("SecurityError");
     return this.map.get(key) ?? null;
   }
   setItem(key: string, value: string): void {
+    owner(this, this instanceof FakeStorage, "setItem");
     if (this.blocked) throw new Error("SecurityError");
     this.map.set(key, value);
   }
   removeItem(key: string): void {
+    owner(this, this instanceof FakeStorage, "removeItem");
     if (this.blocked) throw new Error("SecurityError");
     this.map.delete(key);
   }

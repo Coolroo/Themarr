@@ -333,3 +333,20 @@ Tests inject a fetch (`_fetch`) and fake browser objects (`_env`); both are
 private options. The drawer tests (`test/drawer/`) use a small fake DOM with
 shadow roots, focus and message events (`test/drawer/dom.ts`); the timeout
 before "Sign in to themarr" is `_drawerReadyMs`.
+
+**Browser methods run on their own object.** A browser's `fetch` throws
+"Illegal invocation" when it runs on any other object, and so do
+`matchMedia`, the storage methods and the DOM methods. The SDK never keeps
+one in a field or an options object and calls it from there (`this.#fetch(...)`,
+`host.fetch(...)`): `globalFetch()` wraps the runtime's fetch so it always
+runs on `globalThis`, and boot calls whatever fetch it has bare. The fakes
+enforce it: `fakeFetch` and every fake DOM, window and storage method throw
+when `this` is not their owner (`owner()` in `test/helpers.ts`), and
+`test/bound.test.ts` boots with the global fetch and no `_fetch`.
+
+### Changes
+
+- 0.1.0 (unreleased): boot and the drawer called the browser's `fetch` on
+  the wrong object, so in a real browser every boot resolved `unreachable`
+  ("Failed to execute 'fetch' on 'Window': Illegal invocation"). Found by
+  T-119 in headless Chrome; fixed there.

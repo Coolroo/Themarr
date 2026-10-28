@@ -25,7 +25,9 @@ import type {
   EnvDocument,
   EnvStorage,
   EnvWindow,
+  FetchInit,
   FetchLike,
+  FetchResponse,
   RenderOptions,
   Source,
   Status,
@@ -69,6 +71,17 @@ function checkUrl(url: unknown): { base: string } | string {
     return "bad option url: no user, query or fragment";
   }
   return { base: u.origin + u.pathname.replace(/\/+$/, "") };
+}
+
+/**
+ * The runtime's fetch, always called on globalThis. A browser's fetch is a
+ * method of Window: called on any other object (the Booted instance, the
+ * drawer host) it throws "Illegal invocation". Undefined without a fetch.
+ */
+export function globalFetch(): FetchLike | undefined {
+  const g = globalThis as { fetch?: (url: string, init: FetchInit) => Promise<FetchResponse> };
+  if (typeof g.fetch !== "function") return undefined;
+  return (url, init) => g.fetch!(url, init);
 }
 
 function defaultEnv(): Env {
@@ -122,7 +135,9 @@ class Booted {
     this.#base = base;
     this.#render = render;
     this.#timeoutMs = timeoutMs;
-    this.#fetch = fetchFn;
+    // Never `this.#fetch = fetchFn`: calling it as this.#fetch(...) would
+    // make the Booted instance its `this`. The arrow calls it bare.
+    this.#fetch = (url, init) => fetchFn(url, init);
     this.#env = env;
     this.#browser = env.document !== undefined;
     this.#personal = o.personal ?? this.#browser;
@@ -435,7 +450,7 @@ export async function boot(opts: BootOptions): Promise<BootResult> {
       warn(String(opts?.url), String(opts?.app), checked);
       return unreachable(checked);
     }
-    const fetchFn = opts._fetch ?? (globalThis.fetch as unknown as FetchLike | undefined);
+    const fetchFn = opts._fetch ?? globalFetch();
     if (fetchFn === undefined) {
       warn(opts.url, opts.app, "no fetch in this runtime");
       return unreachable("no fetch in this runtime");

@@ -5,7 +5,7 @@
 // satisfies the boot's EnvDocument and EnvWindow. No jsdom.
 
 import type { Env, EnvSheet } from "../../src/types.ts";
-import { FakeSheet, FakeStorage } from "../helpers.ts";
+import { FakeSheet, FakeStorage, owner } from "../helpers.ts";
 
 type Fn = (ev: FEvent) => void;
 
@@ -60,6 +60,7 @@ class Listeners {
 export class FContentWindow {
   readonly posted: { msg: unknown; targetOrigin: string }[] = [];
   postMessage(msg: unknown, targetOrigin: string): void {
+    owner(this, this instanceof FContentWindow, "postMessage");
     this.posted.push({ msg: structuredClone(msg), targetOrigin });
   }
 }
@@ -102,15 +103,19 @@ export class FEl {
     this.#text = v ?? "";
   }
   setAttribute(k: string, v: string): void {
+    owner(this, this instanceof FEl, "setAttribute");
     this.attrs.set(k, String(v));
   }
   getAttribute(k: string): string | null {
+    owner(this, this instanceof FEl, "getAttribute");
     return this.attrs.get(k) ?? null;
   }
   removeAttribute(k: string): void {
+    owner(this, this instanceof FEl, "removeAttribute");
     this.attrs.delete(k);
   }
   hasAttribute(k: string): boolean {
+    owner(this, this instanceof FEl, "hasAttribute");
     return this.attrs.has(k);
   }
   get hidden(): boolean {
@@ -147,9 +152,11 @@ export class FEl {
     return false;
   }
   addEventListener(type: string, fn: Fn, opts?: unknown): void {
+    owner(this, this instanceof FEl, "addEventListener");
     this.listeners.add(type, fn, opts);
   }
   removeEventListener(type: string, fn: Fn): void {
+    owner(this, this instanceof FEl, "removeEventListener");
     this.listeners.remove(type, fn);
   }
   dispatch(ev: FEvent): FEvent {
@@ -169,9 +176,11 @@ export class FEl {
     return this.dispatch(new FEvent("keydown", { key }));
   }
   focus(): void {
+    owner(this, this instanceof FEl, "focus");
     this.ownerDocument.focused = this;
   }
   attachShadow(_init: { mode: string }): FShadow {
+    owner(this, this instanceof FEl, "attachShadow");
     this.shadowRoot = new FShadow(this);
     return this.shadowRoot;
   }
@@ -238,12 +247,15 @@ export class FDoc {
     this.listeners.fire(new FEvent("DOMContentLoaded"));
   }
   createElement(tag: string): FEl {
+    owner(this, this instanceof FDoc, "createElement");
     return new FEl(tag, this);
   }
   getElementById(id: string): FEl | null {
+    owner(this, this instanceof FDoc, "getElementById");
     return this.documentElement.find((e) => e.id === id) ?? null;
   }
   querySelector(sel: string): FEl | null {
+    owner(this, this instanceof FDoc, "querySelector");
     this.queries.push(sel);
     return sel.split(",").some((s) => this.matching.has(s.trim())) ? this.documentElement : null;
   }
@@ -259,9 +271,11 @@ export class FDoc {
     return f;
   }
   addEventListener(type: string, fn: Fn, opts?: unknown): void {
+    owner(this, this instanceof FDoc, "addEventListener");
     this.listeners.add(type, fn, opts);
   }
   removeEventListener(type: string, fn: Fn): void {
+    owner(this, this instanceof FDoc, "removeEventListener");
     this.listeners.remove(type, fn);
   }
 }
@@ -274,12 +288,15 @@ export class FWin {
     if (constructable) this.CSSStyleSheet = FakeSheet;
   }
   addEventListener(type: string, fn: Fn): void {
+    owner(this, this instanceof FWin, "addEventListener");
     this.listeners.add(type, fn);
   }
   removeEventListener(type: string, fn: Fn): void {
+    owner(this, this instanceof FWin, "removeEventListener");
     this.listeners.remove(type, fn);
   }
   matchMedia(q: string): { matches: boolean } {
+    owner(this, this instanceof FWin, "matchMedia");
     return { matches: q === "(prefers-color-scheme: dark)" && this.prefersDark };
   }
   /** Deliver a message event, as postMessage from another window would. */
