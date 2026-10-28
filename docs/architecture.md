@@ -141,6 +141,10 @@ admins choose (decision 0007), with its own version (ETags `"p<version>"`):
 ```
 
 The same rules hold: atomic writes, one writer at a time, `If-Match`, and a
-file that can't be read stops the start. Names are Authelia's; themarr
+file that can't be read stops the start. Unlike the store, a prefs write
+conflicts only with changes to its own part (`prefs.Part`: the policies,
+or one person's choice for one app; the versions of the last change of
+each are kept in memory), and a write that changes nothing is not
+written (T-115). Names are Authelia's; themarr
 never stores who is in which group. Theme ids here may name a theme deleted
 later; the resolver skips them.

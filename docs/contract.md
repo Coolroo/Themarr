@@ -53,7 +53,7 @@ take, is `404 not_found`.
 | 404 | `not_found` | unknown route, theme, app or policy; an app id that is not a valid id on the public and `/v1/me` theme routes; an app that is not registered on the preference routes |
 | 409 | `in_use` | deleting a theme an assignment or a user or group policy names |
 | 409 | `locked` | saving a theme choice while an admin enforces a theme for this person |
-| 412 | `version_conflict` | `If-Match` is not the current store (or prefs) version |
+| 412 | `version_conflict` | `If-Match` is not the current store version; on prefs writes, what the write changes (the policies, or this person's choice for this app) changed after the `If-Match` version, or that version is newer than the file's |
 | 413 | `too_large` | body above 128 KiB (themes) or 32 KiB (others) |
 | 415 | `unsupported_media_type` | write body without `Content-Type: application/json` (charset utf-8 at most) |
 | 422 | `invalid_theme` | the theme breaks the token rules; `issues` lists them |
@@ -65,6 +65,7 @@ take, is `404 not_found`.
 | 422 | `missing_field` | assignments without `global` or `perApp`; favourites without `favourites`; a preference without `theme`; a policy without `theme` or `kind` |
 | 422 | `too_many` | above 500 themes or 200 apps; above 1000 users with saved choices, or 1000 user (or group) policies |
 | 428 | `if_match_required` | write without `If-Match` |
+| 429 | `rate_limited` | a person saving their choices more than 10 times at once, then more than 2 times a second; `Retry-After` says how many seconds to wait |
 | 500 | `store_failed` | the store or prefs file could not be written (the cause is logged, not returned) |
 
 `issues` on `invalid_theme` is the validator's list, with the codes and JSON
@@ -249,6 +250,16 @@ only. themarr stores saved choices and policies in `prefs.json`, with its
 own version: these routes' `ETag` and `If-Match` are `"p<version>"`, never
 the store's `"<version>"`.
 
+A prefs write checks `If-Match` against **its own part** only: a policy
+write against the last change to any policy, a saved choice against the
+last change to that person's choice for that app. So people saving their
+own choices never make an admin's policy write, or each other's saves,
+fail with 412; two admin tabs, or two tabs of one person on one app,
+still do. The `ETag` is always the file's current version. A write that
+changes nothing (the same choice, the same policy) is not written: it is
+answered like a read, with the current `ETag`. After a restart, any tag
+older than the file's version is 412 once.
+
 ### `GET|HEAD /v1/me/apps/{app}/theme` (any signed-in user)
 
 Behind Authelia (a session, any user). The SDK calls it with
@@ -304,7 +315,9 @@ page (same origin; no CORS). An app that is not registered is `404`.
   (below): `Origin`, `Sec-Fetch-Site: same-origin`, `Content-Type:
   application/json`, `If-Match: "p<version>"`. Refusals: `422
   unknown_theme`, `422 missing_field`, `409 locked` (setting a theme while
-  locked; clearing is always allowed), `412 version_conflict`.
+  locked; clearing is always allowed), `412 version_conflict` (this
+  person's choice for this app changed since), `429 rate_limited` (each
+  person: 10 saves at once, then 2 a second, refused attempts included).
 
 A saved choice may later name a deleted theme: GET still shows it, and the
 resolver skips it.

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Coolroo/themarr/internal/store"
 )
@@ -298,5 +299,89 @@ func TestUnwritableDirKeepsTheSnapshot(t *testing.T) {
 	}
 	if s.Snapshot().Version != 0 || len(s.Snapshot().Choices) != 0 {
 		t.Fatal("a failed save changed the snapshot")
+	}
+}
+
+// TestPartsConflictOnlyWithThemselves (T-115 review): a write conflicts
+// only when its own part changed after the version it read: one person's
+// choice, or the policies. The whole file (Update) conflicts on any change.
+func TestPartsConflictOnlyWithThemselves(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	set := func(user, app, th string) func(d *Data) error {
+		return func(d *Data) error { d.SetChoice(user, app, th); return nil }
+	}
+	pol := func(name string) func(d *Data) error {
+		return func(d *Data) error { d.SetPolicy(Users, name, Policy{Theme: "ocean", Kind: Default}); return nil }
+	}
+	mustPart := func(v uint64, p Part, fn func(d *Data) error) {
+		t.Helper()
+		if _, _, err := s.UpdatePart(v, p, fn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	conflicts := func(v uint64, p Part, fn func(d *Data) error) {
+		t.Helper()
+		if _, _, err := s.UpdatePart(v, p, fn); !errors.Is(err, ErrConflict) {
+			t.Fatalf("got %v, want a conflict", err)
+		}
+	}
+	for i := 0; i < 5; i++ {
+		mustPart(s.Snapshot().Version, ChoiceOf("bob", "board"), set("bob", "board", "t"+strconv.Itoa(i)))
+	}
+	// Read at 0: bob's saves since don't touch these parts.
+	mustPart(0, PolicyPart, pol("carol"))
+	mustPart(0, ChoiceOf("alice", "board"), set("alice", "board", "ocean"))
+	mustPart(0, ChoiceOf("bob", "seerr"), set("bob", "seerr", "ocean"))
+	// They do touch these.
+	conflicts(0, ChoiceOf("bob", "board"), set("bob", "board", "x"))
+	conflicts(5, PolicyPart, pol("dave"))
+	conflicts(0, All, set("x", "y", "z"))
+	conflicts(s.Snapshot().Version+1, ChoiceOf("new", "board"), set("new", "board", "x"))
+	if d := s.Snapshot(); d.Version != 8 || len(d.Users) != 1 || len(d.Choices) != 2 {
+		t.Fatalf("%+v", d)
+	}
+	// After a restart, every tag older than the file conflicts once.
+	s = open(t, dir)
+	conflicts(7, ChoiceOf("alice", "seerr"), set("alice", "seerr", "x"))
+	conflicts(7, PolicyPart, pol("erin"))
+	mustPart(8, ChoiceOf("alice", "seerr"), set("alice", "seerr", "x"))
+	mustPart(8, PolicyPart, pol("erin"))
+}
+
+// TestNoOpUpdateWritesNothing (T-115 review): a write that changes nothing
+// keeps the version and does not touch the file.
+func TestNoOpUpdateWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	if _, err := s.Update(0, func(d *Data) error {
+		d.SetChoice("bob", "board", "forest")
+		d.SetPolicy(Groups, "kids", Policy{Theme: "night", Kind: Enforced})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, FileName)
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	cur := s.Snapshot()
+	for _, c := range []struct {
+		p  Part
+		fn func(d *Data) error
+	}{
+		{ChoiceOf("bob", "board"), func(d *Data) error { d.SetChoice("bob", "board", "forest"); return nil }},
+		{ChoiceOf("bob", "seerr"), func(d *Data) error { d.SetChoice("bob", "seerr", ""); return nil }},
+		{PolicyPart, func(d *Data) error { d.SetPolicy(Groups, "kids", Policy{Theme: "night", Kind: Enforced}); return nil }},
+		{All, func(d *Data) error { return nil }},
+	} {
+		d, written, err := s.UpdatePart(1, c.p, c.fn)
+		if err != nil || written || d != cur {
+			t.Fatalf("%+v: %v %v", c.p, written, err)
+		}
+	}
+	if fi, err := os.Stat(path); err != nil || !fi.ModTime().Equal(old) {
+		t.Fatal("a no-op write touched the file")
 	}
 }

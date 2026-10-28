@@ -9,11 +9,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Coolroo/themarr/internal/prefs"
 	"github.com/Coolroo/themarr/internal/resolve"
@@ -51,11 +54,13 @@ type harness struct {
 	prefs *prefs.Store
 	h     http.Handler
 	audit *syncBuffer
+	dir   string
 }
 
 // newHarness: themes ocean, forest and night; apps board and seerr, each
-// with its own origin; the global default ocean. Wired like main.go.
-func newHarness(t *testing.T) *harness {
+// with its own origin; the global default ocean. Wired like main.go, but
+// with a save limit no test reaches unless an edit sets one.
+func newHarness(t *testing.T, edit ...func(*Config)) *harness {
 	t.Helper()
 	dir := t.TempDir()
 	st, err := store.Open(dir, theme.Default())
@@ -66,9 +71,13 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hs := &harness{t: t, store: st, prefs: pr, audit: &syncBuffer{}}
-	api := New(Config{Store: st, Prefs: pr, PublicOrigin: origin, AdminGroup: "admins",
-		Log: slog.New(slog.NewJSONHandler(hs.audit, nil))})
+	hs := &harness{t: t, store: st, prefs: pr, audit: &syncBuffer{}, dir: dir}
+	cfg := Config{Store: st, Prefs: pr, PublicOrigin: origin, AdminGroup: "admins",
+		Log: slog.New(slog.NewJSONHandler(hs.audit, nil)), SaveBurst: 1000}
+	for _, e := range edit {
+		e(&cfg)
+	}
+	api := New(cfg)
 	srv := server.New(st, server.Options{ClientCN: gw, PublicOrigin: origin, AdminGroup: "admins",
 		Resolver: func(d *store.Data, app string) server.Resolution {
 			r := resolve.Public(d, app)
@@ -602,22 +611,27 @@ func TestAuditLines(t *testing.T) {
 	}
 }
 
-// TestConcurrentPreferenceWrites: of many writers sending the same
-// version, exactly one wins; the rest get 412.
+// TestConcurrentPreferenceWrites: of many tabs of one person sending the
+// same version, exactly one wins and the rest get 412; many people sending
+// that version all win, since each saves only their own choice.
 func TestConcurrentPreferenceWrites(t *testing.T) {
 	hs := newHarness(t)
 	const n = 12
-	var wg sync.WaitGroup
-	codes := make([]int, n)
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			who := user("user" + itoa(uint64(i)))
-			codes[i] = hs.do(http.MethodPut, "/v1/me/apps/board/preference", `{"theme":"forest"}`, writeAs(who, `"p0"`)...).Code
-		}(i)
+	run := func(who func(i int) []string, pick func(i int) string) []int {
+		var wg sync.WaitGroup
+		codes := make([]int, n)
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				codes[i] = hs.do(http.MethodPut, "/v1/me/apps/board/preference", `{"theme":"`+pick(i)+`"}`, writeAs(who(i), `"p0"`)...).Code
+			}(i)
+		}
+		wg.Wait()
+		return codes
 	}
-	wg.Wait()
+	themes := []string{"forest", "night", "ocean"}
+	codes := run(func(int) []string { return user("alice") }, func(i int) string { return themes[i%3] })
 	ok := 0
 	for _, c := range codes {
 		switch c {
@@ -629,6 +643,118 @@ func TestConcurrentPreferenceWrites(t *testing.T) {
 		}
 	}
 	if ok != 1 || hs.prefs.Snapshot().Version != 1 {
-		t.Fatalf("%d won, version %d", ok, hs.prefs.Snapshot().Version)
+		t.Fatalf("one person: %d won, version %d", ok, hs.prefs.Snapshot().Version)
 	}
+	codes = run(func(i int) []string { return user("user" + itoa(uint64(i))) }, func(int) string { return "forest" })
+	for _, c := range codes {
+		if c != 200 {
+			t.Fatalf("many people: code %d", c)
+		}
+	}
+	if v := hs.prefs.Snapshot().Version; v != n+1 {
+		t.Fatalf("version %d", v)
+	}
+}
+
+// TestNoOpSaveWritesNothing (T-115 review): saving the choice a person
+// already has is answered like a read: 200, the same body and ETag, no
+// new version and no write to the file.
+func TestNoOpSaveWritesNothing(t *testing.T) {
+	hs := newHarness(t)
+	bob := user("bob", "users")
+	hs.choose(bob, "board", "forest")
+	path := filepath.Join(hs.dir, prefs.FileName)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	read := hs.do(http.MethodGet, "/v1/me/apps/board/preference", "", bob...)
+	for i := 0; i < 50; i++ {
+		rr := hs.mustDo(http.MethodPut, "/v1/me/apps/board/preference", `{"theme":"forest"}`, writeAs(bob, `"p1"`)...)
+		if rr.Code != 200 || rr.Header().Get("ETag") != read.Header().Get("ETag") || rr.Body.String() != read.Body.String() {
+			t.Fatalf("%d %q %s", rr.Code, rr.Header().Get("ETag"), rr.Body.String())
+		}
+	}
+	// Clearing a choice nobody saved changes nothing either.
+	hs.mustDo(http.MethodPut, "/v1/me/apps/seerr/preference", `{"theme":null}`, writeAs(bob, `"p1"`)...)
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Fatal("a no-op save changed the file")
+	}
+	if fi, err := os.Stat(path); err != nil || !fi.ModTime().Equal(old) {
+		t.Fatal("a no-op save rewrote the file")
+	}
+	// Nor does an admin saving a policy as it is.
+	hs.policy("users", "carol", "night", "default")
+	if rr := hs.do(http.MethodPut, "/v1/policies/users/carol", `{"theme":"night","kind":"default"}`, writeAs(admin, `"p2"`)...); rr.Code != 200 || rr.Header().Get("ETag") != `"p2"` {
+		t.Fatalf("policy as it is: %d %q", rr.Code, rr.Header().Get("ETag"))
+	}
+	if v := hs.prefs.Snapshot().Version; v != 2 {
+		t.Fatalf("version %d after no-op saves", v)
+	}
+	if strings.Count(hs.audit.String(), `"result":"unchanged"`) != 52 {
+		t.Fatalf("audit: %s", hs.audit.String())
+	}
+}
+
+// TestSavesDontStarveOthers (T-115 review): a person's saves, even many,
+// never make an admin's policy write or another person's save fail with
+// 412; a stale tag still conflicts on the part it names.
+func TestSavesDontStarveOthers(t *testing.T) {
+	hs := newHarness(t)
+	bob, alice := user("bob", "users"), user("alice", "users")
+	adminRead := hs.tag()
+	aliceRead := hs.tag()
+	for i := 0; i < 20; i++ {
+		th := []string{"forest", "night"}[i%2]
+		hs.mustDo(http.MethodPut, "/v1/me/apps/board/preference", `{"theme":"`+th+`"}`, writeAs(bob, hs.tag())...)
+	}
+	if rr := hs.do(http.MethodPut, "/v1/policies/users/carol", `{"theme":"night","kind":"enforced"}`, writeAs(admin, adminRead)...); rr.Code != 201 {
+		t.Fatalf("admin after bob's saves: %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := hs.do(http.MethodPut, "/v1/me/apps/board/preference", `{"theme":"ocean"}`, writeAs(alice, aliceRead)...); rr.Code != 200 {
+		t.Fatalf("alice after bob's saves: %d %s", rr.Code, rr.Body.String())
+	}
+	// Another admin's write still makes the first admin's tag stale.
+	problem(t, hs.do(http.MethodPut, "/v1/policies/users/dave", `{"theme":"night","kind":"default"}`, writeAs(admin, adminRead)...), 412, "version_conflict")
+	// And bob's own stale tag still conflicts with his own last save.
+	problem(t, hs.do(http.MethodPut, "/v1/me/apps/board/preference", `{"theme":"ocean"}`, writeAs(bob, aliceRead)...), 412, "version_conflict")
+	// A tag newer than the file is never right.
+	problem(t, hs.do(http.MethodPut, "/v1/me/apps/seerr/preference", `{"theme":"ocean"}`, writeAs(bob, `"p999"`)...), 412, "version_conflict")
+}
+
+// TestSaveRateLimit (T-115 review): each person may save a burst, then a
+// few times a second; beyond that 429 rate_limited with Retry-After. Other
+// people are not affected.
+func TestSaveRateLimit(t *testing.T) {
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	hs := newHarness(t, func(c *Config) {
+		c.SaveBurst, c.SaveRate = 3, 0.5
+		c.Now = func() time.Time { return now }
+	})
+	bob := user("bob")
+	save := func(who []string) *httptest.ResponseRecorder {
+		return hs.do(http.MethodPut, "/v1/me/apps/board/preference", `{"theme":"forest"}`, writeAs(who, hs.tag())...)
+	}
+	for i := 0; i < 3; i++ {
+		if rr := save(bob); rr.Code != 200 {
+			t.Fatalf("save %d: %d", i, rr.Code)
+		}
+	}
+	rr := save(bob)
+	problem(t, rr, http.StatusTooManyRequests, "rate_limited")
+	if ra := rr.Header().Get("Retry-After"); ra != "2" {
+		t.Fatalf("Retry-After %q", ra)
+	}
+	if rr := save(user("alice")); rr.Code != 200 {
+		t.Fatalf("another person: %d", rr.Code)
+	}
+	now = now.Add(2 * time.Second)
+	if rr := save(bob); rr.Code != 200 {
+		t.Fatalf("after waiting: %d", rr.Code)
+	}
+	problem(t, save(bob), http.StatusTooManyRequests, "rate_limited")
 }

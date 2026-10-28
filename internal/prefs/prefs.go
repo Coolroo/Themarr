@@ -6,7 +6,9 @@
 //
 // It follows internal/store's rules (decision 0007): one JSON file in the
 // data directory, prefs.json; every write names the version it read and
-// fails with ErrConflict when the file has moved on; a write builds a new
+// fails with ErrConflict when the part it changes (the policies, or one
+// person's choice for one app: Part) has changed since; a write that
+// changes nothing is not written; a write builds a new
 // snapshot, writes it with store.WriteAtomic (temp file in the same
 // directory, fsync, rename, fsync of the directory), and only then
 // becomes what readers see. Readers take the current snapshot without
@@ -23,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -226,12 +229,55 @@ type Store struct {
 	path string
 	mu   sync.Mutex // one writer at a time
 	cur  atomic.Pointer[Data]
+
+	// Under mu: the version at which each part last changed, in memory
+	// only. A choice not in choiceAt last changed at base or before; base
+	// starts as the file's version, so after a restart every older tag
+	// conflicts once.
+	base       uint64
+	policiesAt uint64
+	choiceAt   map[choiceKey]uint64
 }
+
+// A Part is what one write changes, for the version check: the policies,
+// one person's saved choice for one app, or the whole file. A write names
+// the prefs version it read (If-Match) and conflicts only when its own part
+// changed after that version, so one person's saves never make an admin's
+// policy write, or another person's save, fail with 412 (T-115).
+type Part struct {
+	kind      partKind
+	user, app string
+}
+
+type partKind uint8
+
+const (
+	partAll partKind = iota
+	partPolicies
+	partChoice
+)
+
+var (
+	// All is the whole file: any change after the version read conflicts.
+	All = Part{kind: partAll}
+	// PolicyPart is the user and group policies, all together.
+	PolicyPart = Part{kind: partPolicies}
+)
+
+// ChoiceOf is user's saved choice for app.
+func ChoiceOf(user, app string) Part { return Part{kind: partChoice, user: user, app: app} }
+
+type choiceKey struct{ user, app string }
+
+// maxTracked bounds the versions kept per saved choice. Above it they are
+// dropped and every choice counts as changed at that version: a stale tag
+// then conflicts once more than it must.
+const maxTracked = 10000
 
 // Open loads the prefs file in dir, or starts empty (version 0) when there
 // is none. A file that can't be read, parsed or checked is an error.
 func Open(dir string) (*Store, error) {
-	s := &Store{path: filepath.Join(dir, FileName)}
+	s := &Store{path: filepath.Join(dir, FileName), choiceAt: map[choiceKey]uint64{}}
 	b, err := os.ReadFile(s.path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -245,6 +291,7 @@ func Open(dir string) (*Store, error) {
 		return nil, fmt.Errorf("prefs %s: %w (the file is left as it is)", s.path, err)
 	}
 	s.cur.Store(d)
+	s.base, s.policiesAt = d.Version, d.Version
 	return s, nil
 }
 
@@ -255,37 +302,131 @@ func (s *Store) Snapshot() *Data { return s.cur.Load() }
 // theme delete).
 func (s *Store) ThemeInUse(id string) bool { return s.Snapshot().NamesTheme(id) }
 
-// Update applies fn to a copy of the current data, if the file is at
-// version expected, and saves the result as version expected+1. An error
-// from fn, or a copy that breaks Check, leaves everything as it was.
+// Update is UpdatePart for the whole file: it conflicts unless the file is
+// still at version expected.
 func (s *Store) Update(expected uint64, fn func(d *Data) error) (*Data, error) {
+	d, _, err := s.UpdatePart(expected, All, fn)
+	return d, err
+}
+
+// UpdatePart applies fn to a copy of the current data and saves the result
+// as the next version, unless part changed after version expected (or
+// expected is newer than the file): then ErrConflict. fn changes only
+// part, and only with Data's Set and Delete methods. An error from fn, or
+// a copy that breaks Check, leaves everything as it was. A copy that
+// changes nothing is not written: UpdatePart returns the current data,
+// written is false, and the version stays.
+func (s *Store) UpdatePart(expected uint64, p Part, fn func(d *Data) error) (d *Data, written bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cur := s.cur.Load()
-	if cur.Version != expected {
-		return nil, ErrConflict
+	if expected > cur.Version || expected < s.changedAt(p, cur) {
+		return nil, false, ErrConflict
 	}
 	next := cur.clone()
 	if err := fn(next); err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	return s.commit(cur, next, p)
+}
+
+// changedAt is the version at which part last changed (under mu).
+func (s *Store) changedAt(p Part, cur *Data) uint64 {
+	switch p.kind {
+	case partPolicies:
+		return s.policiesAt
+	case partChoice:
+		if v, ok := s.choiceAt[choiceKey{p.user, p.app}]; ok {
+			return v
+		}
+		return s.base
+	default:
+		return cur.Version
+	}
+}
+
+// commit saves next as the version after cur, unless nothing in part
+// changed (under mu).
+func (s *Store) commit(cur, next *Data, p Part) (*Data, bool, error) {
+	ch := changes(cur, next, p)
+	if !ch.policies && len(ch.choices) == 0 {
+		return cur, false, nil
 	}
 	if err := next.Check(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	next.Version = cur.Version + 1
 	b, err := encode(next)
 	if err != nil {
-		return nil, fmt.Errorf("prefs: encode: %w", err)
+		return nil, false, fmt.Errorf("prefs: encode: %w", err)
 	}
 	if err := store.WriteAtomic(s.path, b); err != nil {
 		if store.IsRenamed(err) {
 			// The new file is in place; readers see what is on disk.
-			s.cur.Store(next)
+			s.publish(next, ch)
 		}
-		return nil, err
+		return nil, false, err
 	}
+	s.publish(next, ch)
+	return next, true, nil
+}
+
+// publish makes next what readers see and notes which parts changed
+// (under mu).
+func (s *Store) publish(next *Data, ch changed) {
 	s.cur.Store(next)
-	return next, nil
+	if ch.policies {
+		s.policiesAt = next.Version
+	}
+	if len(s.choiceAt)+len(ch.choices) > maxTracked {
+		s.choiceAt = map[choiceKey]uint64{}
+		s.base = next.Version
+	}
+	for _, k := range ch.choices {
+		s.choiceAt[k] = next.Version
+	}
+}
+
+// changed is what one write changed.
+type changed struct {
+	policies bool
+	choices  []choiceKey
+}
+
+// changes compares cur and next in part p (everything for All).
+func changes(cur, next *Data, p Part) changed {
+	var ch changed
+	if p.kind != partChoice {
+		ch.policies = !maps.Equal(cur.Users, next.Users) || !maps.Equal(cur.Groups, next.Groups)
+	}
+	if p.kind == partPolicies {
+		return ch
+	}
+	users := map[string]bool{}
+	if p.kind == partChoice {
+		users[p.user] = true
+	} else {
+		for u := range cur.Choices {
+			users[u] = true
+		}
+		for u := range next.Choices {
+			users[u] = true
+		}
+	}
+	for u := range users {
+		a, b := cur.Choices[u], next.Choices[u]
+		for app, t := range a {
+			if v, ok := b[app]; !ok || v != t {
+				ch.choices = append(ch.choices, choiceKey{u, app})
+			}
+		}
+		for app := range b {
+			if _, ok := a[app]; !ok {
+				ch.choices = append(ch.choices, choiceKey{u, app})
+			}
+		}
+	}
+	return ch
 }
 
 // file is the prefs file's layout.

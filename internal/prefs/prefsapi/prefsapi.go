@@ -18,9 +18,11 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Coolroo/themarr/internal/identity"
 	"github.com/Coolroo/themarr/internal/prefs"
@@ -43,11 +45,18 @@ type Config struct {
 	AdminGroup   string          // policies need this group
 	Manifest     *theme.Manifest // nil: theme.Default()
 	Log          *slog.Logger    // audit lines; nil: discard
+	Now          func() time.Time
+
+	// Each person may save their choices SaveBurst times at once, then
+	// SaveRate times a second (429 rate_limited beyond). 0: 10 and 2.
+	SaveBurst int
+	SaveRate  float64
 }
 
 // API serves the routes.
 type API struct {
-	cfg Config
+	cfg   Config
+	saves *limiter
 }
 
 // New builds the routes over cfg.
@@ -61,7 +70,16 @@ func New(cfg Config) *API {
 	if cfg.Log == nil {
 		cfg.Log = slog.New(slog.DiscardHandler)
 	}
-	return &API{cfg: cfg}
+	if cfg.Now == nil {
+		cfg.Now = time.Now
+	}
+	if cfg.SaveBurst <= 0 {
+		cfg.SaveBurst = 10
+	}
+	if cfg.SaveRate <= 0 {
+		cfg.SaveRate = 2
+	}
+	return &API{cfg: cfg, saves: newLimiter(cfg.SaveRate, cfg.SaveBurst, cfg.Now)}
 }
 
 // Routes are the routes to mount (server.Options.Routes).
@@ -69,7 +87,7 @@ func (a *API) Routes() []server.Route {
 	rs := []server.Route{
 		{Pattern: "GET /v1/me/apps/{app}/theme", Handler: http.HandlerFunc(a.meTheme)},
 		{Pattern: "GET /v1/me/apps/{app}/preference", Handler: a.signedIn(a.getPreference)},
-		{Pattern: "PUT /v1/me/apps/{app}/preference", Handler: a.signedIn(a.write("put_preference", a.putPreference))},
+		{Pattern: "PUT /v1/me/apps/{app}/preference", Handler: a.signedIn(a.limited(a.write("put_preference", a.putPreference)))},
 		{Pattern: "GET /v1/policies", Handler: a.admin(a.listPolicies)},
 	}
 	for _, s := range []prefs.Scope{prefs.Users, prefs.Groups} {
@@ -110,15 +128,36 @@ func (a *API) admin(h handler) http.HandlerFunc {
 	})
 }
 
+// limited refuses a person's write beyond their share (429 rate_limited,
+// with Retry-After in seconds).
+func (a *API) limited(h handler) handler {
+	return func(w http.ResponseWriter, r *http.Request, who identity.Identity) {
+		if wait, ok := a.saves.take(who.User); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(wait.Seconds())))))
+			server.Problem(w, r, http.StatusTooManyRequests, "rate_limited", "Too many saves; wait a moment.")
+			return
+		}
+		h(w, r, who)
+	}
+}
+
 // writeHandler is a write, given the prefs version the caller read.
 type writeHandler func(w http.ResponseWriter, r *http.Request, who identity.Identity, expected uint64)
 
 // recorder notes the status and problem code of an answer, for the audit
-// line (server.ProblemRecorder).
+// line (server.ProblemRecorder), and whether the write changed nothing.
 type recorder struct {
 	http.ResponseWriter
-	status int
-	code   string
+	status    int
+	code      string
+	unchanged bool
+}
+
+// noted marks a write that changed nothing, for the audit line.
+func noted(w http.ResponseWriter, written bool) {
+	if rec, ok := w.(*recorder); ok && !written {
+		rec.unchanged = true
+	}
 }
 
 func (r *recorder) WriteHeader(status int) {
@@ -142,6 +181,9 @@ func (a *API) write(action string, h writeHandler) handler {
 				status = http.StatusOK
 			}
 			result := "ok"
+			if rec.unchanged {
+				result = "unchanged"
+			}
 			if status >= 400 {
 				result = "refused"
 				if status >= 500 {
@@ -179,6 +221,7 @@ func prefsTag(v uint64) string { return `"` + tagPrefix + strconv.FormatUint(v, 
 var (
 	errLocked   = errors.New("locked")
 	errNotFound = errors.New("not found")
+	errNoApp    = errors.New("no such app")
 )
 
 // updated answers a prefs update's outcome; false after a refusal.
@@ -193,6 +236,8 @@ func (a *API) updated(w http.ResponseWriter, r *http.Request, err error) bool {
 		server.Problem(w, r, http.StatusConflict, "locked", "An admin has set this theme for you; it can't be changed.")
 	case errors.Is(err, errNotFound):
 		server.Problem(w, r, http.StatusNotFound, "not_found", "No such policy.")
+	case errors.Is(err, errNoApp):
+		server.Problem(w, r, http.StatusNotFound, "not_found", "No such app.")
 	case errors.As(err, &rule):
 		server.Problem(w, r, http.StatusUnprocessableEntity, rule.Code, rule.Detail)
 	default:
@@ -344,7 +389,11 @@ func (a *API) putPreference(w http.ResponseWriter, r *http.Request, who identity
 		server.Problem(w, r, http.StatusUnprocessableEntity, "unknown_theme", "No such theme.")
 		return
 	}
-	p, err := a.cfg.Prefs.Update(expected, func(p *prefs.Data) error {
+	// Only this person's choice for this app is compared with If-Match:
+	// other people's saves and the admins' policy writes never make it
+	// stale. A save that changes nothing writes nothing and is answered
+	// like a read.
+	p, written, err := a.cfg.Prefs.UpdatePart(expected, prefs.ChoiceOf(who.User, app), func(p *prefs.Data) error {
 		if in.Theme == nil {
 			p.SetChoice(who.User, app, "")
 			return nil
@@ -358,6 +407,7 @@ func (a *API) putPreference(w http.ResponseWriter, r *http.Request, who identity
 	if !a.updated(w, r, err) {
 		return
 	}
+	noted(w, written)
 	w.Header().Set("ETag", prefsTag(p.Version))
 	server.WriteJSON(w, http.StatusOK, preferenceOf(d, p, who, app))
 }
@@ -416,7 +466,7 @@ func (a *API) putPolicy(s prefs.Scope) writeHandler {
 			return
 		}
 		created := false
-		p, err := a.cfg.Prefs.Update(expected, func(p *prefs.Data) error {
+		p, written, err := a.cfg.Prefs.UpdatePart(expected, prefs.PolicyPart, func(p *prefs.Data) error {
 			_, exists := p.Policies(s)[name]
 			created = !exists
 			p.SetPolicy(s, name, pol)
@@ -425,6 +475,7 @@ func (a *API) putPolicy(s prefs.Scope) writeHandler {
 		if !a.updated(w, r, err) {
 			return
 		}
+		noted(w, written)
 		w.Header().Set("ETag", prefsTag(p.Version))
 		status := http.StatusOK
 		if created {
@@ -440,7 +491,7 @@ func (a *API) deletePolicy(s prefs.Scope) writeHandler {
 			return
 		}
 		name := r.PathValue("name")
-		p, err := a.cfg.Prefs.Update(expected, func(p *prefs.Data) error {
+		p, _, err := a.cfg.Prefs.UpdatePart(expected, prefs.PolicyPart, func(p *prefs.Data) error {
 			if !p.DeletePolicy(s, name) {
 				return errNotFound
 			}

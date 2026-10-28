@@ -73,10 +73,12 @@ Date: 2026-10-28. Task: T-089. Asked by: the owner, round 3 of the plan
   and every choice it affects, there is one file to back up and check at
   start, and the data is small (a homelab's users). Many small files would
   need a version per file, a directory scan at start, and file names built
-  from user names (a path risk). The cost: two people saving at the same
-  moment share one version, so one of them retries after a 412. If that
-  ever matters, per-user versions can come in a new format without
-  changing the routes.
+  from user names (a path risk). The first cost was that every write
+  shared one version, so one person saving in a loop made every admin's
+  policy write fail with 412 (the T-115 review). Since 0.1.0 a write
+  checks `If-Match` only against the last change of its own part (the
+  policies, or one person's choice for one app), kept in memory; the
+  routes and the file format did not change.
 - **Two files, not the store:** themes are an admin's work, edited from the
   admin UI; choices are written by every signed-in person. Keeping them
   apart keeps the store's version (the admin UI's `If-Match`) from changing
