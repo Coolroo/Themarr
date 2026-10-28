@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -357,4 +358,33 @@ func TestExtraRoutesAreGated(t *testing.T) {
 	r := req(http.MethodGet, "/v1/me/ping", "")
 	r.TLS = tlsState("npm-homepi")
 	problem(t, hs.serve(r), http.StatusForbidden, "client_not_allowed")
+}
+
+// TestThemeInUseOutsideTheStore: a theme that Options.ThemeInUse reports
+// (a policy names it) can't be deleted.
+func TestThemeInUseOutsideTheStore(t *testing.T) {
+	used := map[string]bool{"ocean": true}
+	hs := newHarness(t, func(o *Options) { o.ThemeInUse = func(id string) bool { return used[id] } })
+	hs.putTheme("ocean")
+	problem(t, hs.write(http.MethodDelete, "/v1/themes/ocean", ""), http.StatusConflict, "in_use")
+	if hs.store.Snapshot().Themes["ocean"] == nil {
+		t.Fatal("deleted")
+	}
+	used["ocean"] = false
+	if rr := hs.write(http.MethodDelete, "/v1/themes/ocean", ""); rr.Code != http.StatusNoContent {
+		t.Fatalf("%d", rr.Code)
+	}
+}
+
+// TestCheckWritePrefix: another package's versions ("p7") are told apart
+// from the store's ("7").
+func TestCheckWritePrefix(t *testing.T) {
+	for tag, want := range map[string]int{`"p7"`: 0, `"7"`: 400, `"pp7"`: 400, `"p"`: 400, `"p-1"`: 400} {
+		r := req(http.MethodPut, "/", "", "Origin", origin, "Sec-Fetch-Site", "same-origin", "If-Match", tag)
+		rr := httptest.NewRecorder()
+		v, ok := CheckWrite(rr, r, origin, "p")
+		if want == 0 && (!ok || v != 7) || want != 0 && (ok || rr.Code != want) {
+			t.Errorf("%s: %v %d %d", tag, ok, v, rr.Code)
+		}
+	}
 }

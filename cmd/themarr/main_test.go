@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Coolroo/themarr/internal/config"
+	"github.com/Coolroo/themarr/internal/prefs"
 	"github.com/Coolroo/themarr/internal/store"
 	"github.com/Coolroo/themarr/internal/testutil"
 )
@@ -94,6 +95,24 @@ func TestCorruptStoreStopsStartAndIsKept(t *testing.T) {
 	}
 }
 
+// TestCorruptPrefsStopsStartAndIsKept: the same for the prefs file.
+func TestCorruptPrefsStopsStartAndIsKept(t *testing.T) {
+	s := newSetup(t)
+	path := filepath.Join(s.dataDir, prefs.FileName)
+	bad := `{"format": 1, "version": 1, "choices": {}, "policies": {"users": {"bob": {"theme": "x", "kind": "always"}}, "groups": {}}}`
+	if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errOut := runCmd(append(s.args, "-check"), nil)
+	if code == 0 || !strings.Contains(errOut, "left as it is") || !strings.Contains(errOut, prefs.FileName) {
+		t.Fatalf("%d %q", code, errOut)
+	}
+	b, _ := os.ReadFile(path)
+	if string(b) != bad {
+		t.Fatal("the prefs file was changed")
+	}
+}
+
 func TestHealthcheck(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -170,6 +189,22 @@ func TestServe(t *testing.T) {
 	resp, err = testutil.Client(s.ca, &gateway).Get(url)
 	if err != nil || resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("tls-gateway: %v %v", resp, err)
+	}
+	resp.Body.Close()
+
+	// The per-user routes are wired: /v1/me needs a signed-in user, and
+	// with one there is nothing set yet.
+	meURL := "https://" + ln.Addr().String() + "/v1/me/apps/board/theme"
+	resp, err = testutil.Client(s.ca, &gateway).Get(meURL)
+	if err != nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("me without a user: %v %v", resp, err)
+	}
+	resp.Body.Close()
+	meReq, _ := http.NewRequest(http.MethodGet, meURL, nil)
+	meReq.Header.Set("Remote-User", "alice")
+	resp, err = testutil.Client(s.ca, &gateway).Do(meReq)
+	if err != nil || resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("me: %v %v", resp, err)
 	}
 	resp.Body.Close()
 

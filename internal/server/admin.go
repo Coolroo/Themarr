@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/Coolroo/themarr/internal/identity"
 	"github.com/Coolroo/themarr/internal/store"
 	"github.com/Coolroo/themarr/internal/strictjson"
 	"github.com/Coolroo/themarr/internal/theme"
@@ -23,29 +23,12 @@ const (
 	maxOtherBody = 32 << 10
 )
 
-var validUser = regexp.MustCompile(`^[A-Za-z0-9._@-]{1,128}$`)
-
 // RemoteHeaders is the default Identify: Authelia's Remote-User and
-// Remote-Groups (comma-separated), each sent exactly once. It is used only
-// on admin routes, where the CN pin guarantees tls-gateway sent them.
+// Remote-Groups (comma-separated), each sent exactly once
+// (identity.Authelia). It is used only on routes behind Authelia, where
+// the CN pin guarantees tls-gateway sent them.
 func RemoteHeaders(r *http.Request) (Identity, bool) {
-	users := r.Header.Values("Remote-User")
-	if len(users) != 1 || !validUser.MatchString(users[0]) {
-		return Identity{}, false
-	}
-	id := Identity{User: users[0]}
-	groups := r.Header.Values("Remote-Groups")
-	if len(groups) > 1 {
-		return Identity{}, false
-	}
-	if len(groups) == 1 {
-		for _, g := range strings.Split(groups[0], ",") {
-			if g = strings.TrimSpace(g); g != "" {
-				id.Groups = append(id.Groups, g)
-			}
-		}
-	}
-	return id, true
+	return identity.Authelia{}.Identify(r)
 }
 
 // adminHandler is an admin route's handler, given the caller's identity.
@@ -88,6 +71,9 @@ func (r *recorder) WriteHeader(status int) {
 	r.ResponseWriter.WriteHeader(status)
 }
 
+// RecordProblem implements ProblemRecorder.
+func (r *recorder) RecordProblem(code string) { r.code = code }
+
 // write checks what every admin write needs (the Origin, Sec-Fetch-Site,
 // If-Match) and records one audit line for the attempt: who, what, the
 // result. Never the body.
@@ -112,37 +98,52 @@ func (s *Server) write(action string, h writeHandler) adminHandler {
 				slog.String("result", result), slog.String("code", rec.code),
 				slog.Uint64("store_version", s.store.Snapshot().Version))
 		}()
-		if origins := r.Header.Values("Origin"); len(origins) != 1 || origins[0] != s.opt.PublicOrigin {
-			Problem(rec, r, http.StatusForbidden, "bad_origin", "Writes must come from themarr's own pages.")
-			return
-		}
-		if sites := r.Header.Values("Sec-Fetch-Site"); len(sites) != 1 || sites[0] != "same-origin" {
-			Problem(rec, r, http.StatusForbidden, "cross_site", "Writes must be same-origin requests (Sec-Fetch-Site).")
-			return
-		}
-		expected, status, code, detail := ifMatch(r)
-		if status != 0 {
-			Problem(rec, r, status, code, detail)
+		expected, ok := CheckWrite(rec, r, s.opt.PublicOrigin, "")
+		if !ok {
 			return
 		}
 		target = h(rec, r, expected)
 	}
 }
 
-// ifMatch reads the store version from If-Match: exactly one strong tag,
-// "<version>".
-func ifMatch(r *http.Request) (v uint64, status int, code, detail string) {
+// CheckWrite checks what every write needs before its body is read:
+// exactly one Origin equal to publicOrigin, exactly one Sec-Fetch-Site:
+// same-origin, and exactly one If-Match, a strong tag of prefix and a
+// version ("12" for the store, "p7" for internal/prefs). It returns the
+// version, or writes the refusal and returns false.
+func CheckWrite(w http.ResponseWriter, r *http.Request, publicOrigin, prefix string) (uint64, bool) {
+	if origins := r.Header.Values("Origin"); len(origins) != 1 || origins[0] != publicOrigin {
+		Problem(w, r, http.StatusForbidden, "bad_origin", "Writes must come from themarr's own pages.")
+		return 0, false
+	}
+	if sites := r.Header.Values("Sec-Fetch-Site"); len(sites) != 1 || sites[0] != "same-origin" {
+		Problem(w, r, http.StatusForbidden, "cross_site", "Writes must be same-origin requests (Sec-Fetch-Site).")
+		return 0, false
+	}
+	expected, status, code, detail := ifMatch(r, prefix)
+	if status != 0 {
+		Problem(w, r, status, code, detail)
+		return 0, false
+	}
+	return expected, true
+}
+
+// ifMatch reads a version from If-Match: exactly one strong tag,
+// "<prefix><version>".
+func ifMatch(r *http.Request, prefix string) (v uint64, status int, code, detail string) {
+	example := `"` + prefix + `12"`
 	vals := r.Header.Values("If-Match")
 	if len(vals) == 0 {
-		return 0, http.StatusPreconditionRequired, "if_match_required", "Send If-Match with the store version (the ETag of a read)."
+		return 0, http.StatusPreconditionRequired, "if_match_required", "Send If-Match with the version (the ETag of a read)."
 	}
 	tag := strings.TrimSpace(vals[0])
-	if len(vals) != 1 || len(tag) < 3 || tag[0] != '"' || tag[len(tag)-1] != '"' {
-		return 0, http.StatusBadRequest, "bad_if_match", `If-Match must be one strong tag, such as "12".`
+	if len(vals) != 1 || len(tag) < 3+len(prefix) || tag[0] != '"' || tag[len(tag)-1] != '"' ||
+		!strings.HasPrefix(tag[1:], prefix) {
+		return 0, http.StatusBadRequest, "bad_if_match", "If-Match must be one strong tag, such as " + example + "."
 	}
-	n, err := strconv.ParseUint(tag[1:len(tag)-1], 10, 64)
+	n, err := strconv.ParseUint(tag[1+len(prefix):len(tag)-1], 10, 64)
 	if err != nil {
-		return 0, http.StatusBadRequest, "bad_if_match", `If-Match must be one strong tag, such as "12".`
+		return 0, http.StatusBadRequest, "bad_if_match", "If-Match must be one strong tag, such as " + example + "."
 	}
 	return n, 0, "", ""
 }
@@ -183,6 +184,17 @@ func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool
 	return b, true
 }
 
+// ReadJSON reads a write's body for packages that add routes: exactly one
+// Content-Type: application/json (charset utf-8 at most) and at most 32
+// KiB. It writes the refusal and returns false otherwise.
+func ReadJSON(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	return readBody(w, r, maxOtherBody)
+}
+
+// NoBody refuses a DELETE that carries a body, for packages that add
+// routes.
+func NoBody(w http.ResponseWriter, r *http.Request) bool { return noBody(w, r) }
+
 // noBody refuses a DELETE that carries a body.
 func noBody(w http.ResponseWriter, r *http.Request) bool {
 	n, err := r.Body.Read(make([]byte, 1))
@@ -211,7 +223,7 @@ func (s *Server) updated(w http.ResponseWriter, r *http.Request, err error) bool
 	case errors.Is(err, errNotFound):
 		Problem(w, r, http.StatusNotFound, "not_found", "No such item.")
 	case errors.Is(err, errInUse):
-		Problem(w, r, http.StatusConflict, "in_use", "The theme is assigned; change the assignments first.")
+		Problem(w, r, http.StatusConflict, "in_use", "The theme is assigned or a policy names it; change those first.")
 	case errors.As(err, &rule):
 		Problem(w, r, http.StatusUnprocessableEntity, rule.Code, rule.Detail)
 	default:
@@ -297,8 +309,11 @@ func (s *Server) putTheme(w http.ResponseWriter, r *http.Request, expected uint6
 	return id
 }
 
-// deleteTheme removes a theme that no assignment names, and takes it out
-// of the favourites.
+// deleteTheme removes a theme that no assignment and no policy
+// (Options.ThemeInUse) names, and takes it out of the favourites. The
+// policy check and the delete hold different locks, so a policy written
+// at the same moment can still name the deleted theme; the resolver then
+// skips that policy (internal/resolve).
 func (s *Server) deleteTheme(w http.ResponseWriter, r *http.Request, expected uint64) string {
 	id := r.PathValue("id")
 	if !noBody(w, r) {
@@ -307,6 +322,9 @@ func (s *Server) deleteTheme(w http.ResponseWriter, r *http.Request, expected ui
 	d, err := s.store.Update(expected, func(d *store.Data) error {
 		if d.Themes[id] == nil {
 			return errNotFound
+		}
+		if s.opt.ThemeInUse != nil && s.opt.ThemeInUse(id) {
+			return errInUse
 		}
 		if g := d.Assignments.Global; g != nil && *g == id {
 			return errInUse

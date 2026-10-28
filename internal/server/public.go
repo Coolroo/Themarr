@@ -87,6 +87,12 @@ func themeETag(t *theme.Theme, storeVersion uint64) string {
 	return `"` + hex.EncodeToString(sum[:12]) + `"`
 }
 
+// NoneMatch reports whether a request's If-None-Match names tag, for
+// packages that add routes with a 304.
+func NoneMatch(r *http.Request, tag string) bool {
+	return noneMatch(r.Header.Values("If-None-Match"), tag)
+}
+
 // noneMatch reports whether If-None-Match (RFC 9110 13.1.2, weak
 // comparison) names tag, or is "*".
 func noneMatch(values []string, tag string) bool {
