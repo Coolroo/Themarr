@@ -120,12 +120,21 @@ function Shell() {
 
 export function App(props: { onChanged?: () => void }) {
   const [down, setDown] = useState(false);
-  const api = useMemo(() => new Api({ onUnreachable: () => setDown(true) }), []);
+  const [ended, setEnded] = useState(false);
+  const api = useMemo(() => new Api({ onUnreachable: () => setDown(true), onSessionEnded: () => setEnded(true) }), []);
   return (
     <DataProvider api={api} {...(props.onChanged === undefined ? {} : { onChanged: props.onChanged })}>
       {down && (
         <div class="down" role="alert">
           Themarr can't be reached. The page shows what it had; try again in a moment.
+        </div>
+      )}
+      {ended && (
+        <div class="down" role="alert">
+          Your sign-in may have ended. Reload the page to sign in again.{" "}
+          <button type="button" class="btn" onClick={() => location.reload()}>
+            Reload
+          </button>
         </div>
       )}
       <Shell />

@@ -189,6 +189,42 @@ describe("an ended session", () => {
     await assert.rejects(api.get("/v1/themes"), (e: unknown) => e instanceof ApiError && e.status === 401);
     assert.equal(reloads, 0);
   });
+
+  it("never reloads without session storage for the guard: it asks the person (T-115 review)", async () => {
+    const blocked: (() => GuardStorage | undefined)[] = [
+      () => undefined,
+      () => {
+        throw new Error("SecurityError");
+      },
+      () => ({
+        getItem: () => {
+          throw new Error("SecurityError");
+        },
+        setItem: () => {},
+      }),
+      () => ({
+        getItem: () => null,
+        setItem: () => {
+          throw new Error("QuotaExceededError");
+        },
+      }),
+    ];
+    for (const storage of blocked) {
+      let reloads = 0;
+      let ended = "";
+      const api = new Api({
+        fetch: fake({ "GET /v1/themes": { throws: "Failed to fetch" } }).fetch,
+        reload: () => reloads++,
+        onSessionEnded: (r) => (ended = r),
+        storage,
+      });
+      for (let i = 0; i < 3; i++) {
+        await assert.rejects(api.get("/v1/themes"), (e: unknown) => e instanceof ApiError && e.code === "session_ended" && /Reload the page/.test(e.message));
+      }
+      assert.equal(reloads, 0);
+      assert.equal(ended, "Failed to fetch");
+    }
+  });
 });
 
 describe("loadSnapshot", () => {

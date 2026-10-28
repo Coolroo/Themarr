@@ -4,8 +4,9 @@
 //
 // A network error, a redirect (Authelia's login), or an answer that is not
 // JSON where JSON belongs means the Authelia session has ended: the page
-// reloads, so Authelia can sign the admin in again. A guard stops a reload
-// loop when themarr itself is down.
+// reloads, so Authelia can sign the admin in again. A guard in session
+// storage stops a reload loop when themarr itself is down; without session
+// storage the page asks the admin to reload instead.
 
 import type { Mode, Theme } from "@themarr/tokens";
 
@@ -135,6 +136,12 @@ export interface ApiOptions {
   reload?: () => void;
   /** Called instead of a reload when the last one was too recent: themarr is down. */
   onUnreachable?: (reason: string) => void;
+  /**
+   * Called instead of a reload when there is no session storage for the
+   * guard: the page asks the person to reload instead (no reload loop).
+   */
+  onSessionEnded?: (reason: string) => void;
+  /** Session storage for the guard; undefined or throwing: no automatic reload. */
   storage?: () => GuardStorage | undefined;
   now?: () => number;
 }
@@ -166,6 +173,7 @@ export class Api {
   private readonly fetchFn: FetchFn;
   private readonly reloadFn: () => void;
   private readonly onUnreachable: (reason: string) => void;
+  private readonly onSessionEnded: (reason: string) => void;
   private readonly storage: () => GuardStorage | undefined;
   private readonly now: () => number;
 
@@ -173,6 +181,7 @@ export class Api {
     this.fetchFn = opts.fetch ?? ((url, init) => globalThis.fetch(url, init));
     this.reloadFn = opts.reload ?? (() => globalThis.location.reload());
     this.onUnreachable = opts.onUnreachable ?? (() => {});
+    this.onSessionEnded = opts.onSessionEnded ?? (() => {});
     this.storage = opts.storage ?? defaultStorage;
     this.now = opts.now ?? Date.now;
   }
@@ -204,23 +213,27 @@ export class Api {
     if (force || n(etag) >= n(this.tags[kind])) this.tags[kind] = etag;
   }
 
-  /** Reload the page because the session ended, unless a reload just happened. */
+  /**
+   * Reload the page because the session ended, unless a reload just happened
+   * (themarr is down), or the guard can't remember one: without session
+   * storage (blocked, or a framed page in a browser that partitions it) a
+   * reload could repeat for ever, so the page says so instead (T-115).
+   */
   private reload(reason: string): never {
+    let last: number;
     let store: GuardStorage | undefined;
     try {
       store = this.storage();
+      if (store === undefined) throw new Error("no session storage");
+      last = Number(store.getItem(GUARD_KEY) ?? 0);
+      if (this.now() - last >= RELOAD_GUARD_MS) store.setItem(GUARD_KEY, String(this.now()));
     } catch {
-      store = undefined;
+      this.onSessionEnded(reason);
+      throw new ApiError(0, "session_ended", "Your sign-in may have ended. Reload the page to sign in again.");
     }
-    const last = Number(store?.getItem(GUARD_KEY) ?? 0);
-    if (store !== undefined && this.now() - last < RELOAD_GUARD_MS) {
+    if (this.now() - last < RELOAD_GUARD_MS) {
       this.onUnreachable(reason);
       throw new ApiError(0, "unreachable", `Themarr can't be reached (${reason}). Try again in a moment.`);
-    }
-    try {
-      store?.setItem(GUARD_KEY, String(this.now()));
-    } catch {
-      // Storage refused: reload anyway, once per page.
     }
     this.reloadFn();
     throw new Reloading(reason);
