@@ -128,7 +128,9 @@ instance data and never live in git.
 ```
 
 `version` is the store version, the admin routes' `ETag` and `If-Match`. A
-file themarr can't read stops the start and is left as it is.
+file themarr can't read stops the start and is left as it is. Temp files
+of a write that crashed (`.themarr.json.*.tmp`, `.prefs.json.*.tmp`, older
+than a minute) are removed at start (`store.RemoveStaleTemps`).
 
 A second file, `prefs.json`, in the same folder, holds what people and
 admins choose (decision 0007), with its own version (ETags `"p<version>"`):

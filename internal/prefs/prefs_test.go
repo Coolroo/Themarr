@@ -419,3 +419,21 @@ func TestDropChoices(t *testing.T) {
 		t.Fatalf("second drop: %d %v", n, err)
 	}
 }
+
+// TestStaleTempFilesAreRemovedAtStart (T-115 review): prefs.json's temp
+// files a crashed write left behind go at Open.
+func TestStaleTempFilesAreRemovedAtStart(t *testing.T) {
+	dir := t.TempDir()
+	stale := filepath.Join(dir, ".prefs.json.123.tmp")
+	if err := os.WriteFile(stale, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+	open(t, dir)
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatal("the stale temp file is still there")
+	}
+}

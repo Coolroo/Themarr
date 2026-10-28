@@ -3,12 +3,14 @@ package store
 import (
 	"bytes"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Coolroo/themarr/internal/theme"
 	"github.com/Coolroo/themarr/internal/theme/themetest"
@@ -328,6 +330,39 @@ func TestValidOrigin(t *testing.T) {
 	} {
 		if ValidOrigin(o) {
 			t.Errorf("ValidOrigin(%q) = true", o)
+		}
+	}
+}
+
+// TestStaleTempFilesAreRemovedAtStart (T-115 review): temp files a
+// crashed write left behind go at Open; a fresh one (a write running
+// now) and other files stay.
+func TestStaleTempFilesAreRemovedAtStart(t *testing.T) {
+	dir := t.TempDir()
+	old := time.Now().Add(-time.Hour)
+	mk := func(name string, at time.Time) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, at, at); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	stale := mk(".themarr.json.123.tmp", old)
+	fresh := mk(".themarr.json.456.tmp", time.Now())
+	other := mk(".prefs.json.789.tmp", old)
+	keep := mk("notes.tmp", old)
+	if _, err := Open(dir, theme.Default()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("the stale temp file is still there")
+	}
+	for _, p := range []string{fresh, other, keep} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("%s: %v", p, err)
 		}
 	}
 }

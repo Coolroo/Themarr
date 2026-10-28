@@ -6,7 +6,8 @@
 // snapshot, writes it to a temp file in the same directory, syncs it,
 // renames it over the store file and syncs the directory, and only then
 // becomes what readers see. Readers take the current snapshot without
-// waiting; a snapshot is never changed after it is published.
+// waiting; a snapshot is never changed after it is published. Temp files
+// a crashed write left behind are removed at start (RemoveStaleTemps).
 package store
 
 import (
@@ -22,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Coolroo/themarr/internal/strictjson"
 	"github.com/Coolroo/themarr/internal/theme"
@@ -87,6 +89,9 @@ type Store struct {
 // refuses to start rather than overwrite data it doesn't understand.
 func Open(dir string, m *theme.Manifest) (*Store, error) {
 	s := &Store{path: filepath.Join(dir, FileName), manifest: m}
+	if err := RemoveStaleTemps(s.path); err != nil {
+		return nil, fmt.Errorf("store %s: %w", s.path, err)
+	}
 	b, err := os.ReadFile(s.path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -414,6 +419,33 @@ func WriteAtomic(path string, b []byte) (err error) {
 	defer dh.Close()
 	if derr = dh.Sync(); derr != nil {
 		return &dirSyncError{derr}
+	}
+	return nil
+}
+
+// staleTempAge is how old a temp file must be before RemoveStaleTemps
+// takes it: a write takes milliseconds, so an older one belongs to a write
+// that crashed, never to one running now (themarr -check beside a running
+// themarr).
+const staleTempAge = time.Minute
+
+// RemoveStaleTemps removes the temp files WriteAtomic leaves for path when
+// themarr stops between creating one and renaming it (".<name>.*.tmp" in
+// the same directory, older than a minute). Nothing else is touched.
+func RemoveStaleTemps(path string) error {
+	pattern := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	names, err := filepath.Glob(pattern)
+	if err != nil {
+		return fmt.Errorf("store: temp files: %w", err)
+	}
+	for _, name := range names {
+		fi, err := os.Lstat(name)
+		if err != nil || !fi.Mode().IsRegular() || time.Since(fi.ModTime()) < staleTempAge {
+			continue
+		}
+		if err := os.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("store: remove a stale temp file: %w", err)
+		}
 	}
 	return nil
 }

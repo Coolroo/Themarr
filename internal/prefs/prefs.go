@@ -275,9 +275,13 @@ type choiceKey struct{ user, app string }
 const maxTracked = 10000
 
 // Open loads the prefs file in dir, or starts empty (version 0) when there
-// is none. A file that can't be read, parsed or checked is an error.
+// is none. A file that can't be read, parsed or checked is an error. Temp
+// files a crashed write left behind are removed first.
 func Open(dir string) (*Store, error) {
 	s := &Store{path: filepath.Join(dir, FileName), choiceAt: map[choiceKey]uint64{}}
+	if err := store.RemoveStaleTemps(s.path); err != nil {
+		return nil, fmt.Errorf("prefs %s: %w", s.path, err)
+	}
 	b, err := os.ReadFile(s.path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
